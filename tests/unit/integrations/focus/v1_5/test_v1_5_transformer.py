@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import json
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import MappingProxyType
 
 import polars as pl
 import pytest
@@ -11,6 +13,7 @@ import pytest
 from litellm.integrations.focus.serializers import FocusCsvSerializer, FocusParquetSerializer
 from litellm.integrations.focus.settings import FocusBillingSettings, FocusExportSettings
 from litellm.integrations.focus.v1_5.database import SPEND_LOG_BUCKET_SCHEMA
+from litellm.integrations.focus.v1_5.overrides import FocusDeploymentOverrides
 from litellm.integrations.focus.v1_5.transformer import FOCUS_1_5_SCHEMA, Focus15Transformer
 
 BILLING = FocusBillingSettings(
@@ -32,6 +35,8 @@ def _bucket(**overrides: object) -> dict[str, object]:
         "credential_id": "33b20aab1a63380e19e8",
         "credential_name": "hermes-primary",
         "model": "openai/gpt-5.4-mini",
+        "model_id": "deployment-1",
+        "model_group": "gpt-5.4-mini",
         "custom_llm_provider": "openai",
         "team_id": "team-1",
         "team_alias": "Agents",
@@ -45,9 +50,14 @@ def _bucket(**overrides: object) -> dict[str, object]:
     } | overrides
 
 
-def _transform(*buckets: dict[str, object], billing: FocusBillingSettings = BILLING) -> pl.DataFrame:
+def _transform(
+    *buckets: dict[str, object],
+    billing: FocusBillingSettings = BILLING,
+    overrides: Mapping[str, FocusDeploymentOverrides] = MappingProxyType({}),
+) -> pl.DataFrame:
     settings = FocusExportSettings(version="1.5", billing=billing)
-    return Focus15Transformer(settings).transform(pl.DataFrame(list(buckets), schema=SPEND_LOG_BUCKET_SCHEMA))
+    transformer = Focus15Transformer(settings, resolve_overrides=overrides.get)
+    return transformer.transform(pl.DataFrame(list(buckets), schema=SPEND_LOG_BUCKET_SCHEMA))
 
 
 def _row(**overrides: object) -> dict[str, object]:
@@ -95,8 +105,9 @@ def test_token_bucket_maps_onto_every_focus_column() -> None:
             {"key": "Principal", "value": {"Type": "User", "Name": "Hermes Agent", "Email": "hermes@example.test"}},
             {"key": "Credential", "value": {"Type": "API Key", "Name": "hermes-primary"}},
         ],
-        "ResourceId": "openai/gpt-5.4-mini",
-        "ResourceType": "Model",
+        "ResourceId": "deployment-1",
+        "ResourceName": "gpt-5.4-mini",
+        "ResourceType": "LiteLLM Deployment",
         "ServiceCategory": "AI and Machine Learning",
         "ServiceName": "OpenAI API",
         "ServiceProviderName": "OpenAI",
@@ -254,4 +265,81 @@ def test_csv_writes_charge_periods_as_iso_8601_utc() -> None:
     assert rows.select("ChargePeriodStart", "ChargePeriodEnd").row(0) == (
         "2026-05-25T00:00:00Z",
         "2026-05-26T00:00:00Z",
+    )
+
+
+def test_deployment_overrides_win_over_env_settings() -> None:
+    overrides = {
+        "deployment-1": FocusDeploymentOverrides(
+            region_id="us",
+            region_name="United States",
+            billing_account_id="org-123",
+            sub_account_name="Paid Inference",
+            service_name="OpenAI Platform",
+        )
+    }
+    row = _transform(_bucket(), overrides=overrides).row(0, named=True)
+
+    assert (
+        row["RegionId"],
+        row["RegionName"],
+        row["BillingAccountId"],
+        row["BillingAccountName"],
+        row["SubAccountId"],
+        row["SubAccountName"],
+        row["ServiceName"],
+    ) == ("us", "United States", "org-123", "Example AI Platform", "account-1", "Paid Inference", "OpenAI Platform")
+
+
+def test_include_spend_can_differ_per_deployment() -> None:
+    overrides = {"vendor-billed": FocusDeploymentOverrides(include_spend=False)}
+    frame = _transform(_bucket(model_id="gateway-billed"), _bucket(model_id="vendor-billed"), overrides=overrides)
+
+    assert frame.select("ResourceId", "BilledCost", "EffectiveCost", "InvoiceIssuerName").rows() == [
+        ("gateway-billed", Decimal("0.00297"), Decimal("0.00297"), "Example AI Platform"),
+        ("vendor-billed", Decimal(0), Decimal(0), "OpenAI"),
+    ]
+
+
+def test_explicit_invoice_issuer_and_provider_names_are_kept() -> None:
+    overrides = {
+        "deployment-1": FocusDeploymentOverrides(
+            include_spend=False, invoice_issuer_name="Reseller Inc", service_provider_name="OpenAI LLC"
+        )
+    }
+    row = _transform(_bucket(), overrides=overrides).row(0, named=True)
+
+    assert (row["InvoiceIssuerName"], row["ServiceProviderName"], row["HostProviderName"]) == (
+        "Reseller Inc",
+        "OpenAI LLC",
+        "OpenAI",
+    )
+
+
+def test_self_hosted_models_use_the_deployment_billing_name_as_operator() -> None:
+    overrides = {"spark": FocusDeploymentOverrides(billing_account_name="Home Lab")}
+    row = _transform(_bucket(model_id="spark", custom_llm_provider="hosted_vllm"), overrides=overrides).row(
+        0, named=True
+    )
+
+    assert (row["ServiceProviderName"], row["HostProviderName"], row["InvoiceIssuerName"]) == (
+        "Home Lab",
+        "Home Lab",
+        "Home Lab",
+    )
+
+
+def test_rows_without_a_deployment_have_no_resource_and_skip_override_lookup() -> None:
+    def _fail(model_id: str) -> FocusDeploymentOverrides | None:
+        raise AssertionError(f"looked up {model_id}")
+
+    settings = FocusExportSettings(version="1.5", billing=BILLING)
+    frame = pl.DataFrame([_bucket(model_id=None)], schema=SPEND_LOG_BUCKET_SCHEMA)
+    row = Focus15Transformer(settings, resolve_overrides=_fail).transform(frame).row(0, named=True)
+
+    assert (row["ResourceId"], row["ResourceName"], row["ResourceType"], row["BillingAccountId"]) == (
+        None,
+        None,
+        None,
+        "billing-1",
     )

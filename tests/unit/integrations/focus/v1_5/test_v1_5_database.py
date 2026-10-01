@@ -19,6 +19,8 @@ BUCKET = {
     "credential_id": "33b20aab1a63380e19e8",
     "credential_name": "hermes-primary",
     "model": "openai/gpt-5.4-mini",
+    "model_id": "deployment-1",
+    "model_group": "gpt-5.4-mini",
     "custom_llm_provider": "openai",
     "team_id": None,
     "team_alias": None,

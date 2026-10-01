@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import astuple, fields
 from types import MappingProxyType
 from typing import Final, Literal
 
@@ -15,8 +16,8 @@ from litellm.constants import (
     LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME,
 )
 
-from ..settings import FocusBillingSettings, FocusExportSettings
-from .providers import ProviderEntities, provider_entities
+from ..settings import FocusExportSettings
+from .overrides import ResolvedColumns, ResolveDeploymentOverrides, proxy_deployment_overrides, resolve_columns
 
 _UTC_TIMESTAMP: Final = pl.Datetime(time_unit="us", time_zone="UTC")
 _COST: Final = pl.Decimal(38, 10)
@@ -60,6 +61,7 @@ FOCUS_1_5_SCHEMA: Final = pl.Schema(
         ("RegionName", pl.String),
         ("RequesterDetails", pl.String),
         ("ResourceId", pl.String),
+        ("ResourceName", pl.String),
         ("ResourceType", pl.String),
         ("ServiceCategory", pl.String),
         ("ServiceName", pl.String),
@@ -177,16 +179,14 @@ def _unit_price(cost: str) -> pl.Expr:
     return price.cast(_UNIT_PRICE)  # cast-ok: polars dtype conversion
 
 
-def _provider_column(
-    slugs: pl.Series, billing: FocusBillingSettings, pick: Callable[[ProviderEntities], str]
-) -> pl.Expr:
-    mapping: Final = MappingProxyType(
-        {
-            slug: pick(provider_entities(slug, operator_name=billing.billing_account_name))
-            for slug in slugs.unique().to_list()
-        }
+_RESOLVED_FIELDS: Final = tuple(field.name for field in fields(ResolvedColumns))
+_LOOKUP_SCHEMA: Final = pl.Schema(
+    (
+        ("model_id", pl.String),
+        ("custom_llm_provider", pl.String),
+        *((name, pl.Boolean if name == "include_spend" else pl.String) for name in _RESOLVED_FIELDS),
     )
-    return pl.col("custom_llm_provider").replace_strict(mapping, default=None, return_dtype=pl.String)
+)
 
 
 class Focus15Transformer:
@@ -194,26 +194,54 @@ class Focus15Transformer:
 
     schema = FOCUS_1_5_SCHEMA
 
-    def __init__(self, settings: FocusExportSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: FocusExportSettings | None = None,
+        resolve_overrides: ResolveDeploymentOverrides = proxy_deployment_overrides,
+    ) -> None:
         self._billing: Final = (settings or FocusExportSettings()).billing
+        self._resolve_overrides: Final = resolve_overrides
+
+    def _lookup(self, frame: pl.DataFrame) -> pl.DataFrame:
+        keys: Final = frame.select("model_id", "custom_llm_provider").unique().rows()
+        rows: Final = tuple(
+            (
+                model_id,
+                provider,
+                *astuple(
+                    resolve_columns(
+                        self._billing,
+                        self._resolve_overrides(model_id) if model_id is not None else None,
+                        provider,
+                    )
+                ),
+            )
+            for model_id, provider in keys
+        )
+        return pl.DataFrame(rows, schema=_LOOKUP_SCHEMA, orient="row")
 
     def transform(self, frame: pl.DataFrame) -> pl.DataFrame:
-        billing: Final = self._billing
-        slugs: Final = frame.get_column("custom_llm_provider")
+        joined: Final = frame.join(
+            self._lookup(frame),
+            on=("model_id", "custom_llm_provider"),
+            how="left",
+            nulls_equal=True,
+            maintain_order="left",
+        )
         is_token_meter: Final = pl.col("meter") != "Other Usage"
         unit: Final = pl.when(is_token_meter).then(pl.lit("Tokens")).otherwise(pl.lit("Requests"))
-        billed: Final = _cost(pl.col("billed_cost") if billing.include_spend else pl.lit(0))
+        billed: Final = _cost(pl.when(pl.col("include_spend")).then(pl.col("billed_cost")).otherwise(0))
+        has_deployment: Final = pl.col("model_id").is_not_null()
         sku_id: Final = pl.concat_str(
             pl.col("model").fill_null("unknown-model"),
             pl.col("meter").replace_strict(_METER_SLUGS, return_dtype=pl.String),
             separator="/",
         )
-        service_provider: Final = _provider_column(slugs, billing, lambda entities: entities.service_provider_name)
         charge_period_start: Final = _utc(pl.col("charge_period_start"))
-        selected: Final = frame.select(
+        selected: Final = joined.select(
             billed.alias("BilledCost"),
-            pl.lit(billing.billing_account_id).alias("BillingAccountId"),
-            pl.lit(billing.billing_account_name).alias("BillingAccountName"),
+            pl.col("billing_account_id").alias("BillingAccountId"),
+            pl.col("billing_account_name").alias("BillingAccountName"),
             pl.lit("LiteLLM Billing Account").alias("BillingAccountType"),
             pl.lit("USD").alias("BillingCurrency"),
             charge_period_start.dt.truncate("1mo").dt.offset_by("1mo").alias("BillingPeriodEnd"),
@@ -232,10 +260,8 @@ class Focus15Transformer:
             _unit_price("contracted_cost").alias("ContractedUnitPrice"),
             pl.col("credential_id").alias("CredentialId"),
             billed.alias("EffectiveCost"),
-            _provider_column(slugs, billing, lambda entities: entities.host_provider_name).alias("HostProviderName"),
-            (pl.lit(billing.billing_account_name) if billing.include_spend else service_provider).alias(
-                "InvoiceIssuerName"
-            ),
+            pl.col("host_provider_name").alias("HostProviderName"),
+            pl.col("invoice_issuer_name").alias("InvoiceIssuerName"),
             _cost(pl.col("list_cost")).alias("ListCost"),
             _unit_price("list_cost").alias("ListUnitPrice"),
             pl.lit("Standard").alias("PricingCategory"),
@@ -246,24 +272,25 @@ class Focus15Transformer:
             _cost(pl.col("quantity")).alias("PricingQuantity"),
             unit.alias("PricingUnit"),
             pl.col("principal_id").alias("PrincipalId"),
-            pl.lit(billing.region_id, dtype=pl.String).alias("RegionId"),
-            pl.lit(billing.region_name, dtype=pl.String).alias("RegionName"),
+            pl.col("region_id").alias("RegionId"),
+            pl.col("region_name").alias("RegionName"),
             _json_column(
                 ("principal_id", "principal_name", "principal_email", "credential_id", "credential_name"),
                 _requester_details,
                 "RequesterDetails",
             ),
-            pl.col("model").alias("ResourceId"),
-            pl.when(pl.col("model").is_not_null()).then(pl.lit("Model")).alias("ResourceType"),
+            pl.col("model_id").alias("ResourceId"),
+            pl.when(has_deployment).then(pl.col("model_group")).alias("ResourceName"),
+            pl.when(has_deployment).then(pl.lit("LiteLLM Deployment")).alias("ResourceType"),
             pl.lit("AI and Machine Learning").alias("ServiceCategory"),
-            _provider_column(slugs, billing, lambda entities: entities.service_name).alias("ServiceName"),
-            service_provider.alias("ServiceProviderName"),
+            pl.col("service_name").alias("ServiceName"),
+            pl.col("service_provider_name").alias("ServiceProviderName"),
             pl.lit("Generative AI").alias("ServiceSubcategory"),
             sku_id.alias("SkuId"),
             pl.col("meter").alias("SkuMeter"),
             pl.concat_str(sku_id, pl.col("service_tier").fill_null("default"), separator="/").alias("SkuPriceId"),
-            pl.lit(billing.sub_account_id).alias("SubAccountId"),
-            pl.lit(billing.sub_account_name).alias("SubAccountName"),
+            pl.col("sub_account_id").alias("SubAccountId"),
+            pl.col("sub_account_name").alias("SubAccountName"),
             pl.lit("LiteLLM Account").alias("SubAccountType"),
             _json_column(("request_tags", "team_id", "team_alias"), _tags, "Tags"),
         )

@@ -7,7 +7,9 @@ so these tests are the ones that exercise them
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Final
 
 import polars as pl
@@ -16,6 +18,7 @@ import pytest
 from litellm.integrations.focus.serializers import FocusCsvSerializer
 from litellm.integrations.focus.settings import FocusBillingSettings, FocusExportSettings
 from litellm.integrations.focus.v1_5.database import FocusSpendLogsDatabase
+from litellm.integrations.focus.v1_5.overrides import FocusDeploymentOverrides
 from litellm.integrations.focus.v1_5.transformer import Focus15Transformer
 from litellm.proxy.spend_tracking.spend_tracking_utils import get_logging_payload
 from litellm.proxy.utils import hash_token
@@ -41,6 +44,9 @@ CACHE_WRITE_MODEL: Final = f"cache-write-model-{RUN}"
 ANONYMOUS_MODEL: Final = f"anonymous-model-{RUN}"
 FAILED_MODEL: Final = f"failed-model-{RUN}"
 TAGGED_MODEL: Final = f"tagged-model-{RUN}"
+SPLIT_MODEL: Final = f"split-model-{RUN}"
+LOCAL_DEPLOYMENT: Final = f"local-{RUN}"
+VENDOR_DEPLOYMENT: Final = f"vendor-{RUN}"
 RAW_KEY_MODEL: Final = f"raw-key-model-{RUN}"
 BILLING: Final = FocusBillingSettings(
     include_spend=True,
@@ -94,13 +100,14 @@ async def _spend_log(
     api_key: str = CREDENTIAL_A,
     start: datetime = DAY,
     request_tags: tuple[str, ...] = (),
+    model_id: str | None = None,
 ) -> None:
     await db.execute_raw(
         'INSERT INTO "LiteLLM_SpendLogs" ("request_id", "call_type", "api_key", "startTime", "endTime", "user", '
         '"model", "custom_llm_provider", "team_id", "spend", "prompt_tokens", "completion_tokens", "metadata", '
-        '"request_tags") '
+        '"request_tags", "model_id", "model_group") '
         "VALUES ($1, 'acompletion', $2, $3::timestamp, $3::timestamp, $4, $5, 'openai', $6, $7, $8, $9, "
-        "$10::jsonb, $11::jsonb)",
+        "$10::jsonb, $11::jsonb, $12, $13)",
         f"focus-{RUN}-{uuid.uuid4()}",
         api_key,
         start.replace(tzinfo=None),
@@ -112,6 +119,8 @@ async def _spend_log(
         completion_tokens,
         json.dumps(metadata) if metadata is not None else "{}",
         json.dumps(list(request_tags)),
+        model_id or f"{model}-deployment",
+        f"{model}-group",
     )
 
 
@@ -249,6 +258,24 @@ async def seeded(db):
         metadata=_plain(0.2),
         request_tags=("b",),
     )
+    await _spend_log(
+        db,
+        model=SPLIT_MODEL,
+        spend=1.0,
+        prompt_tokens=1,
+        completion_tokens=1,
+        metadata=_plain(1.0),
+        model_id=LOCAL_DEPLOYMENT,
+    )
+    await _spend_log(
+        db,
+        model=SPLIT_MODEL,
+        spend=2.0,
+        prompt_tokens=1,
+        completion_tokens=1,
+        metadata=_plain(2.0),
+        model_id=VENDOR_DEPLOYMENT,
+    )
     payload_user, payload_api_key = _payload_for_raw_key()
     await _spend_log(
         db,
@@ -265,19 +292,29 @@ async def seeded(db):
     await db.execute_raw('DELETE FROM "LiteLLM_UserTable" WHERE "user_id" = $1', HERMES)
 
 
-async def _export(db, *, granularity: str = "daily") -> pl.DataFrame:
+def _model(model: str) -> pl.Expr:
+    return pl.col("SkuId").str.starts_with(f"{model}/")
+
+
+async def _export(
+    db,
+    *,
+    granularity: str = "daily",
+    overrides: Mapping[str, FocusDeploymentOverrides] = MappingProxyType({}),
+) -> pl.DataFrame:
     database: Final = FocusSpendLogsDatabase(
         granularity=granularity, resolve_db=lambda: db, spend_logs_disabled=lambda: False
     )
     frame: Final = await database.get_usage_data(start_time_utc=DAY, end_time_utc=NEXT_DAY)
     settings: Final = FocusExportSettings(version="1.5", billing=BILLING)
-    return Focus15Transformer(settings).transform(frame).filter(pl.col("Tags").str.contains(TEAM))
+    transformer: Final = Focus15Transformer(settings, resolve_overrides=overrides.get)
+    return transformer.transform(frame).filter(pl.col("Tags").str.contains(TEAM))
 
 
 def _by_meter(rows: pl.DataFrame, model: str) -> dict[str, tuple[Decimal, Decimal, Decimal, Decimal]]:
     return {
         row["SkuMeter"]: (row["PricingQuantity"], row["ListCost"], row["ContractedCost"], row["BilledCost"])
-        for row in rows.filter(pl.col("ResourceId") == model).to_dicts()
+        for row in rows.filter(_model(model)).to_dicts()
     }
 
 
@@ -286,7 +323,7 @@ def _close(actual: tuple[Decimal, ...], expected: tuple[float, ...]) -> bool:
 
 
 async def test_each_principal_and_credential_gets_its_own_daily_rows(db):
-    rows: Final = (await _export(db)).filter((pl.col("ResourceId") == MODEL) & (pl.col("SkuMeter") == "Output Tokens"))
+    rows: Final = (await _export(db)).filter((_model(MODEL)) & (pl.col("SkuMeter") == "Output Tokens"))
 
     assert {
         (row["PrincipalId"], row["CredentialId"]): (int(row["PricingQuantity"]), float(row["BilledCost"]))
@@ -350,21 +387,19 @@ async def test_billed_cost_reconciles_to_spend_for_every_model(db):
     assert (
         abs(
             float(rows["BilledCost"].sum())
-            - (0.4 + 0.8 + 1.6 + 3.2 + 0.0038 + 0.0099 + 0.5 + 0.03 + 0.012 + 4.0 + 0.3 + 0.32)
+            - (0.4 + 0.8 + 1.6 + 3.2 + 0.0038 + 0.0099 + 0.5 + 0.03 + 0.012 + 4.0 + 0.3 + 0.32 + 3.0)
         )
         < 1e-9
     )
 
 
 async def test_requests_without_usage_produce_no_rows(db):
-    assert (await _export(db)).filter(pl.col("ResourceId") == FAILED_MODEL).height == 0
+    assert (await _export(db)).filter(_model(FAILED_MODEL)).height == 0
 
 
 async def test_principal_details_come_from_the_user_table(db):
     row: Final = (
-        (await _export(db))
-        .filter((pl.col("CredentialId") == CREDENTIAL_A) & (pl.col("ResourceId") == MODEL))
-        .row(0, named=True)
+        (await _export(db)).filter((pl.col("CredentialId") == CREDENTIAL_A) & (_model(MODEL))).row(0, named=True)
     )
 
     assert json.loads(row["RequesterDetails"]) == [
@@ -374,15 +409,13 @@ async def test_principal_details_come_from_the_user_table(db):
 
 
 async def test_missing_principal_and_credential_export_as_null(db):
-    rows: Final = (await _export(db)).filter(pl.col("ResourceId") == ANONYMOUS_MODEL)
+    rows: Final = (await _export(db)).filter(_model(ANONYMOUS_MODEL))
 
     assert set(rows.select("PrincipalId", "CredentialId", "RequesterDetails").rows()) == {(None, None, None)}
 
 
 async def test_different_request_tags_are_separate_rows(db):
-    rows: Final = (await _export(db)).filter(
-        (pl.col("ResourceId") == TAGGED_MODEL) & (pl.col("SkuMeter") == "Output Tokens")
-    )
+    rows: Final = (await _export(db)).filter((_model(TAGGED_MODEL)) & (pl.col("SkuMeter") == "Output Tokens"))
 
     assert sorted(
         (sorted(k for k in json.loads(row["Tags"]) if not k.startswith("litellm/")), float(row["BilledCost"]))
@@ -393,7 +426,33 @@ async def test_different_request_tags_are_separate_rows(db):
 async def test_export_holds_the_hashed_credential_never_the_raw_key(db):
     rows: Final = await _export(db)
     csv: Final = FocusCsvSerializer().serialize(rows).decode()
-    raw_key_rows: Final = rows.filter(pl.col("ResourceId") == RAW_KEY_MODEL)
+    raw_key_rows: Final = rows.filter(_model(RAW_KEY_MODEL))
 
     assert RAW_KEY not in csv
     assert set(raw_key_rows.select("PrincipalId", "CredentialId").rows()) == {(HERMES, hash_token(RAW_KEY))}
+
+
+async def test_each_deployment_of_a_model_is_its_own_resource(db):
+    rows: Final = (await _export(db)).filter(_model(SPLIT_MODEL) & (pl.col("SkuMeter") == "Output Tokens"))
+
+    assert sorted(rows.select("ResourceId", "ResourceName", pl.col("BilledCost").cast(pl.Float64)).rows()) == [
+        (LOCAL_DEPLOYMENT, f"{SPLIT_MODEL}-group", 0.75),
+        (VENDOR_DEPLOYMENT, f"{SPLIT_MODEL}-group", 1.5),
+    ]
+
+
+async def test_deployment_overrides_apply_to_that_deployment_only(db):
+    overrides: Final = {
+        LOCAL_DEPLOYMENT: FocusDeploymentOverrides(region_id="on-prem", region_name="Home Lab"),
+        VENDOR_DEPLOYMENT: FocusDeploymentOverrides(include_spend=False),
+    }
+    rows: Final = (await _export(db, overrides=overrides)).filter(
+        _model(SPLIT_MODEL) & (pl.col("SkuMeter") == "Output Tokens")
+    )
+
+    assert sorted(
+        rows.select("ResourceId", "RegionId", pl.col("BilledCost").cast(pl.Float64), "InvoiceIssuerName").rows()
+    ) == [
+        (LOCAL_DEPLOYMENT, "on-prem", 0.75, "Example AI Platform"),
+        (VENDOR_DEPLOYMENT, None, 0.0, "OpenAI"),
+    ]

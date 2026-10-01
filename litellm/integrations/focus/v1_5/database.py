@@ -25,6 +25,8 @@ WITH logs AS (
         NULLIF(sl.api_key, '') AS credential_id,
         NULLIF(sl.metadata->>'user_api_key_alias', '') AS credential_name,
         NULLIF(sl.model, '') AS model,
+        NULLIF(sl.model_id, '') AS model_id,
+        NULLIF(sl.model_group, '') AS model_group,
         NULLIF(sl.custom_llm_provider, '') AS custom_llm_provider,
         NULLIF(sl.team_id, '') AS team_id,
         NULLIF(sl.metadata->>'user_api_key_team_alias', '') AS team_alias,
@@ -96,6 +98,8 @@ SELECT
     u.credential_id,
     u.credential_name,
     u.model,
+    u.model_id,
+    u.model_group,
     u.custom_llm_provider,
     u.team_id,
     u.team_alias,
@@ -110,9 +114,9 @@ FROM usage_rows u
 LEFT JOIN "LiteLLM_UserTable" ut ON ut.user_id = u.principal_id
 GROUP BY
     u.bucket_start, u.principal_id, ut.user_alias, ut.user_email, u.credential_id, u.credential_name, u.model,
-    u.custom_llm_provider, u.team_id, u.team_alias, u.service_tier, u.request_tags, u.meter
+    u.model_id, u.model_group, u.custom_llm_provider, u.team_id, u.team_alias, u.service_tier, u.request_tags, u.meter
 ORDER BY
-    u.bucket_start, u.principal_id, u.credential_id, u.model, u.custom_llm_provider, u.team_id, u.meter
+    u.bucket_start, u.principal_id, u.credential_id, u.model, u.model_id, u.custom_llm_provider, u.team_id, u.meter
 LIMIT $4
 """
 
@@ -126,6 +130,8 @@ SPEND_LOG_BUCKET_SCHEMA: Final = pl.Schema(
         ("credential_id", pl.String),
         ("credential_name", pl.String),
         ("model", pl.String),
+        ("model_id", pl.String),
+        ("model_group", pl.String),
         ("custom_llm_provider", pl.String),
         ("team_id", pl.String),
         ("team_alias", pl.String),
@@ -149,6 +155,8 @@ class SpendLogBucket(TypedDict):
     credential_id: ReadOnly[str | None]
     credential_name: ReadOnly[str | None]
     model: ReadOnly[str | None]
+    model_id: ReadOnly[str | None]
+    model_group: ReadOnly[str | None]
     custom_llm_provider: ReadOnly[str | None]
     team_id: ReadOnly[str | None]
     team_alias: ReadOnly[str | None]
