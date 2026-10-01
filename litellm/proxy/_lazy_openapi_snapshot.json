@@ -9862,7 +9862,7 @@
             },
             "limit": {
               "default": 500,
-              "description": "Maximum number of FOCUS rows to return",
+              "description": "Maximum number of FOCUS rows to return; totals cover all rows",
               "maximum": 5000.0,
               "minimum": 1.0,
               "title": "Limit",
@@ -9895,6 +9895,10 @@
               "title": "Focus Version",
               "type": "string"
             },
+            "returned_rows": {
+              "title": "Returned Rows",
+              "type": "integer"
+            },
             "rows": {
               "items": {
                 "additionalProperties": {
@@ -9925,6 +9929,14 @@
               "title": "Total Billed Cost",
               "type": "number"
             },
+            "total_effective_cost": {
+              "title": "Total Effective Cost",
+              "type": "number"
+            },
+            "total_list_cost": {
+              "title": "Total List Cost",
+              "type": "number"
+            },
             "total_rows": {
               "title": "Total Rows",
               "type": "integer"
@@ -9946,6 +9958,9 @@
             "window",
             "total_rows",
             "total_billed_cost",
+            "total_effective_cost",
+            "total_list_cost",
+            "returned_rows",
             "rows"
           ],
           "title": "FocusDryRunResponse",
@@ -10078,7 +10093,7 @@
     "paths": {
       "/focus/dry-run": {
         "post": {
-          "description": "Return the FOCUS rows an export of the window would upload, without uploading them. The window is widened\nto whole buckets the same way /focus/export widens it. Only proxy admins can call it.",
+          "description": "Return the FOCUS rows an export of the window would upload, without uploading them. Totals cover every row\nin the window and ``limit`` caps the rows returned. The window is widened to whole buckets the same way\n/focus/export widens it. Only proxy admins can call it.",
           "operationId": "focus_dry_run_focus_dry_run_post",
           "requestBody": {
             "content": {

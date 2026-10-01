@@ -21,7 +21,7 @@ class FocusDryRunRequest(BaseModel):
 
     start_time_utc: datetime | None = Field(None, description="Inclusive start of the preview window (UTC)")
     end_time_utc: datetime | None = Field(None, description="Exclusive end of the preview window (UTC)")
-    limit: int = Field(500, ge=1, le=5000, description="Maximum number of FOCUS rows to return")
+    limit: int = Field(500, ge=1, le=5000, description="Maximum number of FOCUS rows to return; totals cover all rows")
 
     @model_validator(mode="after")
     def _end_after_start(self) -> Self:
@@ -56,6 +56,9 @@ class FocusDryRunResponse(BaseModel):
     window: FocusExportWindow | None
     total_rows: int
     total_billed_cost: float
+    total_effective_cost: float
+    total_list_cost: float
+    returned_rows: int
     rows: tuple[dict[str, FocusCell], ...]
 
 

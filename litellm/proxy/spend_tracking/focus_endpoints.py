@@ -81,6 +81,12 @@ def _window(windows: tuple[FocusTimeWindow, ...]) -> FocusExportWindow | None:
     return FocusExportWindow(start_time_utc=windows[0].start_time, end_time_utc=windows[-1].end_time)
 
 
+def _column_total(frame: pl.DataFrame, column: str) -> float:
+    if column not in frame.columns:
+        return 0.0
+    return float(frame.get_column(column).sum() or 0)
+
+
 def _json_rows(frame: pl.DataFrame) -> tuple[dict[str, FocusCell], ...]:
     import polars as pl
 
@@ -101,8 +107,9 @@ async def focus_dry_run(
     user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
     target: Annotated[FocusExportTarget, Depends(get_focus_export_target)],
 ) -> FocusDryRunResponse:
-    """Return the FOCUS rows an export of the window would upload, without uploading them. The window is widened
-    to whole buckets the same way /focus/export widens it. Only proxy admins can call it."""
+    """Return the FOCUS rows an export of the window would upload, without uploading them. Totals cover every row
+    in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the same way
+    /focus/export widens it. Only proxy admins can call it."""
     _require_admin(user_api_key_dict)
     try:
         windows: Final = (
@@ -117,20 +124,23 @@ async def focus_dry_run(
         )
         window: Final = _window(windows)
         frame: Final = await target.preview(
-            limit=request.limit,
+            limit=None,
             start_time_utc=window.start_time_utc if window is not None else request.start_time_utc,
             end_time_utc=window.end_time_utc if window is not None else request.end_time_utc,
         )
     except ValueError as exc:
         raise _http_error(400, str(exc)) from exc
-    billed: Final = frame.get_column("BilledCost").sum() if "BilledCost" in frame.columns else 0
+    returned: Final = frame.head(request.limit)
     return FocusDryRunResponse(
         focus_version=target.settings.version,
         data_granularity=target.settings.data_granularity,
         window=window,
         total_rows=frame.height,
-        total_billed_cost=float(billed or 0),
-        rows=_json_rows(frame),
+        total_billed_cost=_column_total(frame, "BilledCost"),
+        total_effective_cost=_column_total(frame, "EffectiveCost"),
+        total_list_cost=_column_total(frame, "ListCost"),
+        returned_rows=returned.height,
+        rows=_json_rows(returned),
     )
 
 

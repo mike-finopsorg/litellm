@@ -5528,8 +5528,9 @@ export interface paths {
         put?: never;
         /**
          * Focus Dry Run
-         * @description Return the FOCUS rows an export of the window would upload, without uploading them. The window is widened
-         *     to whole buckets the same way /focus/export widens it. Only proxy admins can call it.
+         * @description Return the FOCUS rows an export of the window would upload, without uploading them. Totals cover every row
+         *     in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the same way
+         *     /focus/export widens it. Only proxy admins can call it.
          */
         post: operations["focus_dry_run_focus_dry_run_post"];
         delete?: never;
@@ -31351,7 +31352,7 @@ export interface components {
             end_time_utc?: string | null;
             /**
              * Limit
-             * @description Maximum number of FOCUS rows to return
+             * @description Maximum number of FOCUS rows to return; totals cover all rows
              * @default 500
              */
             limit: number;
@@ -31367,12 +31368,18 @@ export interface components {
             data_granularity: string;
             /** Focus Version */
             focus_version: string;
+            /** Returned Rows */
+            returned_rows: number;
             /** Rows */
             rows: {
                 [key: string]: string | number | boolean | null;
             }[];
             /** Total Billed Cost */
             total_billed_cost: number;
+            /** Total Effective Cost */
+            total_effective_cost: number;
+            /** Total List Cost */
+            total_list_cost: number;
             /** Total Rows */
             total_rows: number;
             window: components["schemas"]["FocusExportWindow"] | null;

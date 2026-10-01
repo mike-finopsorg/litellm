@@ -20,12 +20,16 @@ DAY = datetime(2026, 9, 30, tzinfo=timezone.utc)
 NEXT_DAY = datetime(2026, 10, 1, tzinfo=timezone.utc)
 FRAME = pl.DataFrame(
     {
-        "BilledCost": [Decimal("0.0000315"), Decimal("0.0000105")],
+        "BilledCost": [Decimal("0.0000315"), Decimal(0)],
+        "EffectiveCost": [Decimal("0.0000315"), Decimal(0)],
+        "ListCost": [Decimal("0.0000315"), Decimal("0.0000105")],
         "ChargePeriodStart": [DAY, DAY],
         "PrincipalId": ["hermes", None],
     },
     schema={
         "BilledCost": pl.Decimal(38, 10),
+        "EffectiveCost": pl.Decimal(38, 10),
+        "ListCost": pl.Decimal(38, 10),
         "ChargePeriodStart": pl.Datetime(time_unit="us", time_zone="UTC"),
         "PrincipalId": pl.String,
     },
@@ -78,24 +82,50 @@ def test_dry_run_returns_json_safe_rows_for_the_widened_window(target: _Target) 
     )
 
     assert response.status_code == 200
-    assert target.previews == [(10, DAY, NEXT_DAY)]
+    assert target.previews == [(None, DAY, NEXT_DAY)]
     assert response.json() == {
         "focus_version": "1.5",
         "data_granularity": "daily",
         "window": {"start_time_utc": "2026-09-30T00:00:00Z", "end_time_utc": "2026-10-01T00:00:00Z"},
         "total_rows": 2,
-        "total_billed_cost": pytest.approx(0.000042),
+        "total_billed_cost": pytest.approx(0.0000315),
+        "total_effective_cost": pytest.approx(0.0000315),
+        "total_list_cost": pytest.approx(0.000042),
+        "returned_rows": 2,
         "rows": [
-            {"BilledCost": 0.0000315, "ChargePeriodStart": "2026-09-30T00:00:00Z", "PrincipalId": "hermes"},
-            {"BilledCost": 0.0000105, "ChargePeriodStart": "2026-09-30T00:00:00Z", "PrincipalId": None},
+            {
+                "BilledCost": 0.0000315,
+                "EffectiveCost": 0.0000315,
+                "ListCost": 0.0000315,
+                "ChargePeriodStart": "2026-09-30T00:00:00Z",
+                "PrincipalId": "hermes",
+            },
+            {
+                "BilledCost": 0.0,
+                "EffectiveCost": 0.0,
+                "ListCost": 0.0000105,
+                "ChargePeriodStart": "2026-09-30T00:00:00Z",
+                "PrincipalId": None,
+            },
         ],
     }
+
+
+def test_dry_run_totals_cover_every_row_while_limit_caps_the_rows_returned(target: _Target) -> None:
+    body = _client(target).post("/focus/dry-run", json={"limit": 1}).json()
+
+    assert (body["total_rows"], body["total_list_cost"], body["returned_rows"], len(body["rows"])) == (
+        2,
+        pytest.approx(0.000042),
+        1,
+        1,
+    )
 
 
 def test_dry_run_without_a_window_previews_everything(target: _Target) -> None:
     response = _client(target).post("/focus/dry-run", json={})
 
-    assert (response.status_code, response.json()["window"], target.previews) == (200, None, [(500, None, None)])
+    assert (response.status_code, response.json()["window"], target.previews) == (200, None, [(None, None, None)])
 
 
 def test_export_returns_the_windows_it_uploaded(target: _Target) -> None:
