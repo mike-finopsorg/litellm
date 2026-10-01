@@ -24,5 +24,5 @@ class FocusCsvSerializer(FocusSerializer):
         if decimal_cols:
             frame = frame.with_columns([pl.col(c).cast(pl.Float64) for c in decimal_cols])
         buffer: Final = io.BytesIO()
-        frame.write_csv(buffer)
+        frame.write_csv(buffer, datetime_format="%Y-%m-%dT%H:%M:%SZ")
         return buffer.getvalue()

@@ -105,7 +105,7 @@ async def test_rows_carry_the_utc_day_as_the_charge_period(db):
     rows: Final = await _rows_by_identity(db)
     row: Final = rows[(HERMES, CREDENTIAL_A, "gpt-5.4-mini")]
 
-    assert (row["ChargePeriodStart"], row["ChargePeriodEnd"]) == ("2002-06-14T00:00:00Z", "2002-06-15T00:00:00Z")
+    assert (row["ChargePeriodStart"], row["ChargePeriodEnd"]) == (DAY, NEXT_DAY)
     assert (row["ServiceProviderName"], row["SubAccountId"], row["ChargeCategory"]) == ("openai", TEAM, "Usage")
 
 

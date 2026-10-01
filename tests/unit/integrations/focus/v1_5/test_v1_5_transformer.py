@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import polars as pl
 
+from litellm.integrations.focus.serializers import FocusCsvSerializer, FocusParquetSerializer
 from litellm.integrations.focus.v1_5.database import SPEND_LOG_BUCKET_SCHEMA
 from litellm.integrations.focus.v1_5.transformer import FOCUS_1_5_SCHEMA, Focus15Transformer
 
@@ -31,8 +34,8 @@ def test_each_bucket_field_lands_in_its_focus_column() -> None:
             "BilledCost": Decimal("0.125000"),
             "BillingCurrency": "USD",
             "ChargeCategory": "Usage",
-            "ChargePeriodStart": "2026-05-25T00:00:00Z",
-            "ChargePeriodEnd": "2026-05-26T00:00:00Z",
+            "ChargePeriodStart": datetime(2026, 5, 25, tzinfo=timezone.utc),
+            "ChargePeriodEnd": datetime(2026, 5, 26, tzinfo=timezone.utc),
             "CredentialId": "33b20aab1a63380e19e8",
             "PrincipalId": "hermes",
             "ResourceId": "gpt-5.4-mini",
@@ -59,3 +62,21 @@ def test_rotated_credential_keeps_the_principal() -> None:
 
 def test_empty_input_still_carries_the_full_schema() -> None:
     assert _transform().schema == FOCUS_1_5_SCHEMA
+
+
+def test_parquet_stores_charge_periods_as_utc_timestamps() -> None:
+    payload = FocusParquetSerializer().serialize(_transform(_bucket()))
+
+    assert pl.read_parquet(io.BytesIO(payload)).select("ChargePeriodStart", "ChargePeriodEnd").row(0) == (
+        datetime(2026, 5, 25, tzinfo=timezone.utc),
+        datetime(2026, 5, 26, tzinfo=timezone.utc),
+    )
+
+
+def test_csv_writes_charge_periods_as_iso_8601_utc() -> None:
+    rows = pl.read_csv(io.BytesIO(FocusCsvSerializer().serialize(_transform(_bucket()))), infer_schema=False)
+
+    assert rows.select("ChargePeriodStart", "ChargePeriodEnd").row(0) == (
+        "2026-05-25T00:00:00Z",
+        "2026-05-26T00:00:00Z",
+    )
