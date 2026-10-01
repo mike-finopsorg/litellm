@@ -24,7 +24,7 @@ def _version_components(
         case "1.2":
             return FocusLiteLLMDatabase(), FocusTransformer()
         case "1.5":
-            return FocusSpendLogsDatabase(granularity=settings.data_granularity), Focus15Transformer()
+            return FocusSpendLogsDatabase(granularity=settings.data_granularity), Focus15Transformer(settings)
 
 
 class FocusExportEngine:

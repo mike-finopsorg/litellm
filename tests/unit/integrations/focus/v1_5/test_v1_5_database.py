@@ -14,11 +14,21 @@ BUCKET = {
     "charge_period_start": "2026-05-25T00:00:00Z",
     "charge_period_end": "2026-05-26T00:00:00Z",
     "principal_id": "hermes",
+    "principal_name": None,
+    "principal_email": None,
     "credential_id": "33b20aab1a63380e19e8",
-    "model": "gpt-5.4-mini",
+    "credential_name": "hermes-primary",
+    "model": "openai/gpt-5.4-mini",
     "custom_llm_provider": "openai",
     "team_id": None,
-    "spend": 0.5,
+    "team_alias": None,
+    "service_tier": "default",
+    "request_tags": "[]",
+    "meter": "Output Tokens",
+    "quantity": 7,
+    "list_cost": 0.0000315,
+    "contracted_cost": 0.0000315,
+    "billed_cost": 0.0000315,
 }
 
 
@@ -66,7 +76,7 @@ async def test_rejects_negative_limit_before_querying() -> None:
 
 @pytest.mark.asyncio
 async def test_rejects_rows_that_do_not_match_the_bucket_shape() -> None:
-    db = _RecordingDb([{**BUCKET, "spend": "not-a-number"}])
+    db = _RecordingDb([{**BUCKET, "meter": "Reasoning Tokens"}])
 
     with pytest.raises(pydantic.ValidationError):
         await _database(db).get_usage_data()

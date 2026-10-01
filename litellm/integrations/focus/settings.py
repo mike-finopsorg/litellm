@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import socket
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Final, Literal, TypeAlias
 
 FocusVersion: TypeAlias = Literal["1.2", "1.5"]
@@ -12,10 +15,41 @@ DEFAULT_FOCUS_VERSION: Final[FocusVersion] = "1.2"
 DEFAULT_FOCUS_DATA_GRANULARITY: Final[FocusDataGranularity] = "daily"
 
 
+_TRUE_VALUES: Final = frozenset(("true", "1", "yes", "on"))
+_FALSE_VALUES: Final = frozenset(("false", "0", "no", "off"))
+
+
+@dataclass(frozen=True, slots=True)
+class FocusBillingSettings:
+    """Values for the FOCUS 1.5 billing and account columns, which LiteLLM data does not carry."""
+
+    include_spend: bool
+    billing_account_id: str
+    billing_account_name: str
+    sub_account_id: str
+    sub_account_name: str
+
+
+def default_account_label(hostname: str | None = None) -> str:
+    return f"{hostname or socket.gethostname()}-litellm"
+
+
+def _default_billing_settings() -> FocusBillingSettings:
+    label: Final = default_account_label()
+    return FocusBillingSettings(
+        include_spend=True,
+        billing_account_id=label,
+        billing_account_name=label,
+        sub_account_id=label,
+        sub_account_name=label,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class FocusExportSettings:
     version: FocusVersion = DEFAULT_FOCUS_VERSION
     data_granularity: FocusDataGranularity = DEFAULT_FOCUS_DATA_GRANULARITY
+    billing: FocusBillingSettings = field(default_factory=_default_billing_settings)
 
 
 def _parse_version(raw: str) -> FocusVersion:
@@ -34,8 +68,39 @@ def _parse_data_granularity(raw: str) -> FocusDataGranularity:
             raise ValueError(f"Unsupported FOCUS_DATA_GRANULARITY '{raw}'. Supported: daily")
 
 
-def parse_focus_export_settings(*, version: str | None, data_granularity: str | None) -> FocusExportSettings:
-    """Validate raw version/granularity values, treating empty values as unset."""
+def _parse_include_spend(raw: str) -> bool:
+    if raw in _TRUE_VALUES:
+        return True
+    if raw in _FALSE_VALUES:
+        return False
+    raise ValueError(f"Unsupported FOCUS_INCLUDE_SPEND '{raw}'. Supported: true, false")
+
+
+def parse_focus_billing_settings(env: Mapping[str, str], *, hostname: str | None = None) -> FocusBillingSettings:
+    """Read FOCUS_INCLUDE_SPEND and the FOCUS_BILLING_* / FOCUS_ACCOUNT_* values, treating empty values as unset."""
+    label: Final = default_account_label(hostname)
+
+    def _value(name: str) -> str:
+        return env.get(name, "").strip()
+
+    include_spend: Final = _value("FOCUS_INCLUDE_SPEND").lower()
+    return FocusBillingSettings(
+        include_spend=_parse_include_spend(include_spend) if include_spend else True,
+        billing_account_id=_value("FOCUS_BILLING_ID") or label,
+        billing_account_name=_value("FOCUS_BILLING_NAME") or label,
+        sub_account_id=_value("FOCUS_ACCOUNT_ID") or label,
+        sub_account_name=_value("FOCUS_ACCOUNT_NAME") or label,
+    )
+
+
+def parse_focus_export_settings(
+    *,
+    version: str | None,
+    data_granularity: str | None,
+    env: Mapping[str, str] = MappingProxyType({}),
+    hostname: str | None = None,
+) -> FocusExportSettings:
+    """Validate raw version/granularity values and FOCUS_* env values, treating empty values as unset."""
     stripped_version: Final = (version or "").strip()
     stripped_granularity: Final = (data_granularity or "").strip().lower()
     return FocusExportSettings(
@@ -43,6 +108,7 @@ def parse_focus_export_settings(*, version: str | None, data_granularity: str | 
         data_granularity=(
             _parse_data_granularity(stripped_granularity) if stripped_granularity else DEFAULT_FOCUS_DATA_GRANULARITY
         ),
+        billing=parse_focus_billing_settings(env, hostname=hostname),
     )
 
 
@@ -60,9 +126,12 @@ def validate_export_frequency(settings: FocusExportSettings, frequency: str) -> 
 __all__ = (
     "DEFAULT_FOCUS_DATA_GRANULARITY",
     "DEFAULT_FOCUS_VERSION",
+    "FocusBillingSettings",
     "FocusDataGranularity",
     "FocusExportSettings",
     "FocusVersion",
+    "default_account_label",
+    "parse_focus_billing_settings",
     "parse_focus_export_settings",
     "validate_export_frequency",
 )

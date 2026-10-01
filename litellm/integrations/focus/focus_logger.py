@@ -47,6 +47,7 @@ class FocusLogger(CustomLogger):
         self.settings: Final = parse_focus_export_settings(
             version=focus_version or os.getenv("FOCUS_VERSION"),
             data_granularity=data_granularity or os.getenv("FOCUS_DATA_GRANULARITY"),
+            env=os.environ,
         )
         self.provider = (provider or os.getenv("FOCUS_PROVIDER") or "s3").lower()
         self.export_format = (export_format or os.getenv("FOCUS_FORMAT") or "parquet").lower()

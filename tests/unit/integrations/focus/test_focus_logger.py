@@ -44,7 +44,6 @@ def test_invalid_env_value_fails_at_construction(monkeypatch: pytest.MonkeyPatch
         FocusLogger()
 
 
-
 def test_1_5_with_the_default_hourly_frequency_fails_at_construction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FOCUS_FREQUENCY", raising=False)
 
