@@ -118,3 +118,26 @@ def test_region_comes_from_focus_env() -> None:
 def test_region_id_and_name_must_be_set_together(env: dict[str, str]) -> None:
     with pytest.raises(ValueError, match="FOCUS_REGION_ID and FOCUS_REGION_NAME must be set together"):
         parse_focus_billing_settings(env, hostname="spark")
+
+
+def test_1_5_accepts_hourly_granularity() -> None:
+    settings = parse_focus_export_settings(version="1.5", data_granularity="hourly")
+
+    assert settings == FocusExportSettings(version="1.5", data_granularity="hourly")
+
+
+def test_1_2_rejects_hourly_granularity() -> None:
+    with pytest.raises(ValueError, match=r"FOCUS_VERSION=1\.2 only supports FOCUS_DATA_GRANULARITY=daily"):
+        parse_focus_export_settings(version="1.2", data_granularity="hourly")
+
+
+@pytest.mark.parametrize("frequency", ("hourly", "daily"))
+def test_1_5_hourly_accepts_frequencies_made_of_whole_hours(frequency: str) -> None:
+    validate_export_frequency(FocusExportSettings(version="1.5", data_granularity="hourly"), frequency)
+
+
+def test_1_5_hourly_rejects_interval_frequency() -> None:
+    settings = FocusExportSettings(version="1.5", data_granularity="hourly")
+
+    with pytest.raises(ValueError, match="FOCUS_FREQUENCY=hourly or daily"):
+        validate_export_frequency(settings, "interval")

@@ -82,3 +82,13 @@ async def test_rejects_rows_that_do_not_match_the_bucket_shape() -> None:
 
     with pytest.raises(pydantic.ValidationError):
         await _database(db).get_usage_data()
+
+
+@pytest.mark.asyncio
+async def test_hourly_granularity_buckets_by_hour() -> None:
+    db = _RecordingDb([])
+    database = FocusSpendLogsDatabase(granularity="hourly", resolve_db=lambda: db, spend_logs_disabled=lambda: False)
+
+    await database.get_usage_data(start_time_utc=START, end_time_utc=END)
+
+    assert db.calls == [(SPEND_LOG_BUCKETS_SQL, ("hour", START, END, None))]

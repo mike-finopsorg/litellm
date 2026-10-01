@@ -12,7 +12,7 @@ from typing_extensions import ReadOnly, TypedDict
 
 from ..settings import FocusDataGranularity
 
-BucketUnit: TypeAlias = Literal["day"]
+BucketUnit: TypeAlias = Literal["day", "hour"]
 SkuMeter: TypeAlias = Literal[
     "Input Tokens", "Cached Input Tokens", "Cache Write Tokens", "Output Tokens", "Other Usage"
 ]
@@ -197,6 +197,8 @@ def _bucket_unit(granularity: FocusDataGranularity) -> BucketUnit:
     match granularity:
         case "daily":
             return "day"
+        case "hourly":
+            return "hour"
 
 
 class FocusSpendLogsDatabase:

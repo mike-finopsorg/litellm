@@ -456,3 +456,14 @@ async def test_deployment_overrides_apply_to_that_deployment_only(db):
         (LOCAL_DEPLOYMENT, "on-prem", 0.75, "Example AI Platform"),
         (VENDOR_DEPLOYMENT, None, 0.0, "OpenAI"),
     ]
+
+
+async def test_hourly_granularity_splits_a_day_into_hour_buckets(db):
+    rows: Final = (await _export(db, granularity="hourly")).filter(
+        (pl.col("CredentialId") == CREDENTIAL_A) & _model(MODEL) & (pl.col("SkuMeter") == "Output Tokens")
+    )
+
+    assert rows.select("ChargePeriodStart", "ChargePeriodEnd", pl.col("BilledCost").cast(pl.Float64)).rows() == [
+        (DAY, DAY.replace(hour=1), 0.3),
+        (DAY.replace(hour=23), NEXT_DAY, 0.6),
+    ]

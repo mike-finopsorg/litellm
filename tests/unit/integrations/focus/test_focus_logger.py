@@ -74,3 +74,16 @@ def test_1_5_csv_export_writes_tiny_costs_without_scientific_notation() -> None:
     frame = pl.DataFrame({"BilledCost": [Decimal("0.0000001234")]}, schema={"BilledCost": pl.Decimal(38, 10)})
 
     assert engine._serializer.serialize(frame).decode().splitlines() == ["BilledCost", "0.0000001234"]
+
+
+def test_1_5_hourly_from_env_runs_on_the_default_hourly_frequency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FOCUS_VERSION", "1.5")
+    monkeypatch.setenv("FOCUS_DATA_GRANULARITY", "hourly")
+    monkeypatch.delenv("FOCUS_FREQUENCY", raising=False)
+
+    logger = FocusLogger()
+
+    assert (logger.settings, logger.frequency) == (
+        FocusExportSettings(version="1.5", data_granularity="hourly"),
+        "hourly",
+    )

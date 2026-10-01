@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import Final, Literal, TypeAlias
 
 FocusVersion: TypeAlias = Literal["1.2", "1.5"]
-FocusDataGranularity: TypeAlias = Literal["daily"]
+FocusDataGranularity: TypeAlias = Literal["daily", "hourly"]
 
 DEFAULT_FOCUS_VERSION: Final[FocusVersion] = "1.2"
 DEFAULT_FOCUS_DATA_GRANULARITY: Final[FocusDataGranularity] = "daily"
@@ -64,10 +64,10 @@ def _parse_version(raw: str) -> FocusVersion:
 
 def _parse_data_granularity(raw: str) -> FocusDataGranularity:
     match raw:
-        case "daily":
+        case "daily" | "hourly":
             return raw
         case _:
-            raise ValueError(f"Unsupported FOCUS_DATA_GRANULARITY '{raw}'. Supported: daily")
+            raise ValueError(f"Unsupported FOCUS_DATA_GRANULARITY '{raw}'. Supported: daily, hourly")
 
 
 def _parse_include_spend(raw: str) -> bool:
@@ -112,23 +112,35 @@ def parse_focus_export_settings(
     """Validate raw version/granularity values and FOCUS_* env values, treating empty values as unset."""
     stripped_version: Final = (version or "").strip()
     stripped_granularity: Final = (data_granularity or "").strip().lower()
-    return FocusExportSettings(
+    settings: Final = FocusExportSettings(
         version=_parse_version(stripped_version) if stripped_version else DEFAULT_FOCUS_VERSION,
         data_granularity=(
             _parse_data_granularity(stripped_granularity) if stripped_granularity else DEFAULT_FOCUS_DATA_GRANULARITY
         ),
         billing=parse_focus_billing_settings(env, hostname=hostname),
     )
+    if settings.version == "1.2" and settings.data_granularity != "daily":
+        raise ValueError("FOCUS_VERSION=1.2 only supports FOCUS_DATA_GRANULARITY=daily")
+    return settings
+
+
+def _frequencies_covering_whole_buckets(granularity: FocusDataGranularity) -> tuple[str, ...]:
+    match granularity:
+        case "daily":
+            return ("daily",)
+        case "hourly":
+            return ("hourly", "daily")
 
 
 def validate_export_frequency(settings: FocusExportSettings, frequency: str) -> None:
     """Require 1.5 exports to cover whole charge periods so no bucket is split across files."""
     if settings.version != "1.5":
         return
-    if frequency != settings.data_granularity:
+    allowed: Final = _frequencies_covering_whole_buckets(settings.data_granularity)
+    if frequency not in allowed:
         raise ValueError(
             f"FOCUS_VERSION=1.5 with FOCUS_DATA_GRANULARITY={settings.data_granularity} "
-            f"requires FOCUS_FREQUENCY={settings.data_granularity}, got '{frequency}'"
+            f"requires FOCUS_FREQUENCY={' or '.join(allowed)}, got '{frequency}'"
         )
 
 
