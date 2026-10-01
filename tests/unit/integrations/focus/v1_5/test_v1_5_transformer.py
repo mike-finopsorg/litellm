@@ -343,3 +343,19 @@ def test_rows_without_a_deployment_have_no_resource_and_skip_override_lookup() -
         None,
         "billing-1",
     )
+
+
+def test_litellm_user_agent_tags_become_one_provider_tag_with_the_full_user_agent() -> None:
+    row = _row(
+        request_tags='["User-Agent: AsyncOpenAI", "User-Agent: AsyncOpenAI/Python 2.36.0", "prod"]',
+        team_id=None,
+        team_alias=None,
+    )
+
+    assert json.loads(row["Tags"]) == {"litellm/user_agent": "AsyncOpenAI/Python 2.36.0", "prod": True}
+
+
+def test_user_agent_without_a_product_version_is_kept_as_is() -> None:
+    row = _row(request_tags='["User-Agent: curl"]', team_id=None, team_alias=None)
+
+    assert json.loads(row["Tags"]) == {"litellm/user_agent": "curl"}

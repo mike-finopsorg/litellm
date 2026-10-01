@@ -147,13 +147,24 @@ def _requester_details(row: Mapping[str, str | None]) -> str | None:
     return _REQUESTER_DETAILS_ADAPTER.dump_json(entries, by_alias=True, exclude_none=True).decode()
 
 
+_USER_AGENT_TAG_PREFIX: Final = "User-Agent: "
+
+
 def _tags(row: Mapping[str, str | None]) -> str | None:
-    user_tags: Final = tuple(
-        (str(tag), True) for tag in _REQUEST_TAGS_ADAPTER.validate_json(row["request_tags"] or "[]") if tag is not None
+    request_tags: Final = tuple(
+        str(tag) for tag in _REQUEST_TAGS_ADAPTER.validate_json(row["request_tags"] or "[]") if tag is not None
     )
+    user_agents: Final = tuple(
+        tag.removeprefix(_USER_AGENT_TAG_PREFIX) for tag in request_tags if tag.startswith(_USER_AGENT_TAG_PREFIX)
+    )
+    user_tags: Final = tuple((tag, True) for tag in request_tags if not tag.startswith(_USER_AGENT_TAG_PREFIX))
     litellm_tags: Final = tuple(
         (f"litellm/{name}", value)
-        for name, value in (("team_id", row["team_id"]), ("team_alias", row["team_alias"]))
+        for name, value in (
+            ("team_id", row["team_id"]),
+            ("team_alias", row["team_alias"]),
+            ("user_agent", max(user_agents, key=len) if user_agents else None),
+        )
         if value is not None
     )
     tags: Final = MappingProxyType({key: value for key, value in sorted(user_tags + litellm_tags)})
