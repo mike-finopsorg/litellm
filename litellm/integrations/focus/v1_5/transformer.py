@@ -9,7 +9,7 @@ import polars as pl
 # see: https://focus.finops.org/focus-specification/v1-5/
 FOCUS_1_5_SCHEMA: Final = pl.Schema(
     (
-        ("BilledCost", pl.Decimal(18, 6)),
+        ("BilledCost", pl.Decimal(38, 10)),
         ("BillingCurrency", pl.String),
         ("ChargeCategory", pl.String),
         ("ChargePeriodStart", pl.Datetime(time_unit="us", time_zone="UTC")),
@@ -34,7 +34,7 @@ class Focus15Transformer:
 
     def transform(self, frame: pl.DataFrame) -> pl.DataFrame:
         return frame.select(
-            pl.col("spend").cast(pl.Decimal(18, 6)).alias("BilledCost"),  # cast-ok: polars dtype conversion
+            pl.col("spend").cast(pl.Decimal(38, 10)).alias("BilledCost"),  # cast-ok: polars dtype conversion
             pl.lit("USD").alias("BillingCurrency"),
             pl.lit("Usage").alias("ChargeCategory"),
             _utc(pl.col("charge_period_start")).alias("ChargePeriodStart"),

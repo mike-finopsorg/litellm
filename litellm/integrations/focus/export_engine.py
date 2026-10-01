@@ -47,12 +47,13 @@ class FocusExportEngine:
             prefix=self.prefix,
             config=destination_config,
         )
-        self._serializer = self._init_serializer()
-        self._database, self._transformer = _version_components(settings or FocusExportSettings())
+        resolved_settings: Final = settings or FocusExportSettings()
+        self._serializer = self._init_serializer(resolved_settings)
+        self._database, self._transformer = _version_components(resolved_settings)
 
-    def _init_serializer(self) -> FocusSerializer:
+    def _init_serializer(self, settings: FocusExportSettings) -> FocusSerializer:
         if self.export_format == "csv":
-            return FocusCsvSerializer()
+            return FocusCsvSerializer(positional_floats=settings.version == "1.5")
         if self.export_format == "parquet":
             return FocusParquetSerializer()
         raise NotImplementedError(f"Export format '{self.export_format}' not supported. Use 'parquet' or 'csv'.")

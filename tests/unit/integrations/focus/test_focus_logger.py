@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
+import polars as pl
 import pytest
 
 from litellm.integrations.focus.database import FocusLiteLLMDatabase
@@ -63,3 +66,12 @@ def test_default_engine_keeps_the_1_2_pipeline() -> None:
 
     assert isinstance(engine._database, FocusLiteLLMDatabase)
     assert engine._transformer.schema == FOCUS_NORMALIZED_SCHEMA
+
+
+def test_1_5_csv_export_writes_tiny_costs_without_scientific_notation() -> None:
+    engine = FocusLogger(
+        focus_version="1.5", frequency="daily", export_format="csv", destination_config={"bucket_name": "focus-test"}
+    )._ensure_engine()
+    frame = pl.DataFrame({"BilledCost": [Decimal("0.0000001234")]}, schema={"BilledCost": pl.Decimal(38, 10)})
+
+    assert engine._serializer.serialize(frame).decode().splitlines() == ["BilledCost", "0.0000001234"]

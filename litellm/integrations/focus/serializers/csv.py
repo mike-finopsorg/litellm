@@ -15,6 +15,9 @@ class FocusCsvSerializer(FocusSerializer):
 
     extension = "csv"
 
+    def __init__(self, *, positional_floats: bool = False) -> None:
+        self._float_scientific: Final = False if positional_floats else None
+
     def serialize(self, frame: pl.DataFrame) -> bytes:
         """Encode the provided frame as a CSV payload."""
         # Cast Decimal columns to Float64 so CSV output uses standard
@@ -24,5 +27,5 @@ class FocusCsvSerializer(FocusSerializer):
         if decimal_cols:
             frame = frame.with_columns([pl.col(c).cast(pl.Float64) for c in decimal_cols])
         buffer: Final = io.BytesIO()
-        frame.write_csv(buffer, datetime_format="%Y-%m-%dT%H:%M:%SZ")
+        frame.write_csv(buffer, datetime_format="%Y-%m-%dT%H:%M:%SZ", float_scientific=self._float_scientific)
         return buffer.getvalue()

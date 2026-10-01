@@ -80,3 +80,7 @@ def test_csv_writes_charge_periods_as_iso_8601_utc() -> None:
         "2026-05-25T00:00:00Z",
         "2026-05-26T00:00:00Z",
     )
+
+
+def test_sub_micro_dollar_costs_keep_ten_decimal_places() -> None:
+    assert _transform(_bucket(spend=0.0000001234)).item(0, "BilledCost") == Decimal("0.0000001234")

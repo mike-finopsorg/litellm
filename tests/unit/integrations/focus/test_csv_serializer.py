@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import polars as pl
 
 from litellm.integrations.focus.serializers.csv import FocusCsvSerializer
@@ -45,3 +47,22 @@ def test_should_cast_decimal_columns_to_float():
 
 def test_extension_should_be_csv():
     assert FocusCsvSerializer.extension == "csv"
+
+
+def _tiny_cost_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {"BilledCost": [Decimal("0.0000001234")]},
+        schema={"BilledCost": pl.Decimal(38, 10)},
+    )
+
+
+def test_positional_floats_never_use_scientific_notation():
+    result = FocusCsvSerializer(positional_floats=True).serialize(_tiny_cost_frame())
+
+    assert result.decode().splitlines() == ["BilledCost", "0.0000001234"]
+
+
+def test_default_float_formatting_is_unchanged():
+    result = FocusCsvSerializer().serialize(_tiny_cost_frame())
+
+    assert result.decode().splitlines() == ["BilledCost", "1.234e-7"]
