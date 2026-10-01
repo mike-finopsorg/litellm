@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from litellm.integrations.focus.destinations.base import FocusTimeWindow
+from litellm.integrations.focus.settings import FocusExportSettings
 from litellm.integrations.mavvrik_focus.mavvrik_focus_logger import MavvrikFocusLogger
 
 
@@ -65,3 +66,10 @@ async def test_export_window_delivers_empty_payload_for_empty_export(
         time_window=window,
         filename="metrics.csv",
     )
+
+
+def test_ignores_focus_env_and_stays_on_1_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FOCUS_VERSION", "bogus")
+    monkeypatch.setenv("FOCUS_DATA_GRANULARITY", "bogus")
+
+    assert MavvrikFocusLogger().settings == FocusExportSettings(version="1.2", data_granularity="daily")

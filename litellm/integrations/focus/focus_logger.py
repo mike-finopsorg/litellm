@@ -11,6 +11,7 @@ from litellm._logging import verbose_logger
 from litellm.integrations.custom_logger import CustomLogger
 
 from .destinations import FocusTimeWindow
+from .settings import parse_focus_export_settings
 
 if TYPE_CHECKING:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -38,9 +39,15 @@ class FocusLogger(CustomLogger):
         interval_seconds: int | None = None,
         prefix: str | None = None,
         destination_config: dict[str, Any] | None = None,
+        focus_version: str | None = None,
+        data_granularity: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        self.settings: Final = parse_focus_export_settings(
+            version=focus_version or os.getenv("FOCUS_VERSION"),
+            data_granularity=data_granularity or os.getenv("FOCUS_DATA_GRANULARITY"),
+        )
         self.provider = (provider or os.getenv("FOCUS_PROVIDER") or "s3").lower()
         self.export_format = (export_format or os.getenv("FOCUS_FORMAT") or "parquet").lower()
         self.frequency = (frequency or os.getenv("FOCUS_FREQUENCY") or "hourly").lower()

@@ -73,6 +73,8 @@ class VantageLogger(FocusLogger):
             frequency=resolved_frequency,
             interval_seconds=resolved_interval,
             prefix="vantage_exports",
+            focus_version="1.2",
+            data_granularity="daily",
             destination_config=destination_config,
             **kwargs,
         )

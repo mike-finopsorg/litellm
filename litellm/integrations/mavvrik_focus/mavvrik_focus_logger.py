@@ -97,6 +97,8 @@ class MavvrikFocusLogger(FocusLogger):
             export_format="csv",
             frequency="daily",
             prefix="mavvrik_focus_exports",
+            focus_version="1.2",
+            data_granularity="daily",
             destination_config={
                 "api_key": os.getenv("MAVVRIK_API_KEY"),
                 "api_endpoint": os.getenv("MAVVRIK_API_ENDPOINT"),
