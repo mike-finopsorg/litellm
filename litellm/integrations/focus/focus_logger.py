@@ -14,6 +14,7 @@ from .destinations import FocusTimeWindow
 from .settings import parse_focus_export_settings, validate_export_frequency
 
 if TYPE_CHECKING:
+    import polars as pl
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     from litellm.proxy.db.db_transaction_queue.pod_lock_manager import PodLockManager
@@ -24,6 +25,45 @@ else:
 
 FOCUS_USAGE_DATA_JOB_NAME: Final = "focus_export_usage_data"
 DEFAULT_DRY_RUN_LIMIT: Final = 500
+MAX_EXPORT_WINDOWS: Final = 31 * 24
+
+
+def _bucket_step(frequency: str) -> timedelta:
+    match frequency:
+        case "hourly":
+            return timedelta(hours=1)
+        case "daily":
+            return timedelta(days=1)
+        case _:
+            raise ValueError(f"Manual FOCUS exports need FOCUS_FREQUENCY=hourly or daily, got '{frequency}'")
+
+
+def _to_utc(moment: datetime) -> datetime:
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment.astimezone(timezone.utc)
+
+
+def _floor(moment: datetime, step: timedelta) -> datetime:
+    hour_start: Final = _to_utc(moment).replace(minute=0, second=0, microsecond=0)
+    return hour_start if step == timedelta(hours=1) else hour_start.replace(hour=0)
+
+
+def aligned_windows(
+    *, start_time_utc: datetime, end_time_utc: datetime, frequency: str, now: datetime
+) -> tuple[FocusTimeWindow, ...]:
+    """Split [start, end) into the windows the scheduler exports, widened to whole buckets and stopping before the
+    bucket that is still open at ``now``."""
+    step: Final = _bucket_step(frequency)
+    start: Final = _floor(start_time_utc, step)
+    end_floor: Final = _floor(end_time_utc, step)
+    widened_end: Final = end_floor if end_floor == _to_utc(end_time_utc) else end_floor + step
+    end: Final = min(widened_end, _floor(now, step))
+    count: Final = max(0, (end - start) // step)
+    if count > MAX_EXPORT_WINDOWS:
+        raise ValueError(f"Manual FOCUS export spans {count} windows; the limit is {MAX_EXPORT_WINDOWS}")
+    return tuple(
+        FocusTimeWindow(start_time=start + index * step, end_time=start + (index + 1) * step, frequency=frequency)
+        for index in range(count)
+    )
 
 
 class FocusLogger(CustomLogger):
@@ -113,6 +153,36 @@ class FocusLogger(CustomLogger):
         else:
             # No time bounds → export all available data
             await self._export_all(limit=limit)
+
+    async def preview(
+        self,
+        *,
+        limit: int | None = DEFAULT_DRY_RUN_LIMIT,
+        start_time_utc: datetime | None = None,
+        end_time_utc: datetime | None = None,
+    ) -> pl.DataFrame:
+        """Return the FOCUS rows an export of the window would upload, without uploading them."""
+        engine: Final = self._ensure_engine()
+        return await engine.preview(limit=limit, start_time_utc=start_time_utc, end_time_utc=end_time_utc)
+
+    async def export_range(
+        self,
+        *,
+        start_time_utc: datetime,
+        end_time_utc: datetime,
+        limit: int | None = None,
+        now: datetime | None = None,
+    ) -> tuple[FocusTimeWindow, ...]:
+        """Export every scheduler-sized window covering [start, end), e.g. to backfill history."""
+        windows: Final = aligned_windows(
+            start_time_utc=start_time_utc,
+            end_time_utc=end_time_utc,
+            frequency=self.frequency,
+            now=now or datetime.now(timezone.utc),
+        )
+        for window in windows:
+            await self._export_window(window=window, limit=limit)
+        return windows
 
     async def dry_run_export_usage_data(self, limit: int | None = DEFAULT_DRY_RUN_LIMIT) -> dict[str, object]:
         """Return transformed data without uploading."""
@@ -228,4 +298,4 @@ class FocusLogger(CustomLogger):
         )
 
 
-__all__ = ["FocusLogger"]
+__all__ = ("FocusLogger", "aligned_windows")

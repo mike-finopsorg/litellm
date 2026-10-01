@@ -9841,6 +9841,337 @@
       }
     }
   },
+  "focus": {
+    "components": {
+      "schemas": {
+        "FocusDryRunRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "end_time_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive end of the preview window (UTC)",
+              "title": "End Time Utc"
+            },
+            "limit": {
+              "default": 500,
+              "description": "Maximum number of FOCUS rows to return",
+              "maximum": 5000.0,
+              "minimum": 1.0,
+              "title": "Limit",
+              "type": "integer"
+            },
+            "start_time_utc": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start of the preview window (UTC)",
+              "title": "Start Time Utc"
+            }
+          },
+          "title": "FocusDryRunRequest",
+          "type": "object"
+        },
+        "FocusDryRunResponse": {
+          "properties": {
+            "data_granularity": {
+              "title": "Data Granularity",
+              "type": "string"
+            },
+            "focus_version": {
+              "title": "Focus Version",
+              "type": "string"
+            },
+            "rows": {
+              "items": {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              "title": "Rows",
+              "type": "array"
+            },
+            "total_billed_cost": {
+              "title": "Total Billed Cost",
+              "type": "number"
+            },
+            "total_rows": {
+              "title": "Total Rows",
+              "type": "integer"
+            },
+            "window": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FocusExportWindow"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "focus_version",
+            "data_granularity",
+            "window",
+            "total_rows",
+            "total_billed_cost",
+            "rows"
+          ],
+          "title": "FocusDryRunResponse",
+          "type": "object"
+        },
+        "FocusExportRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "end_time_utc": {
+              "description": "Exclusive end of the export range (UTC)",
+              "format": "date-time",
+              "title": "End Time Utc",
+              "type": "string"
+            },
+            "start_time_utc": {
+              "description": "Inclusive start of the export range (UTC)",
+              "format": "date-time",
+              "title": "Start Time Utc",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start_time_utc",
+            "end_time_utc"
+          ],
+          "title": "FocusExportRequest",
+          "type": "object"
+        },
+        "FocusExportResponse": {
+          "properties": {
+            "data_granularity": {
+              "title": "Data Granularity",
+              "type": "string"
+            },
+            "focus_version": {
+              "title": "Focus Version",
+              "type": "string"
+            },
+            "windows": {
+              "items": {
+                "$ref": "#/components/schemas/FocusExportWindow"
+              },
+              "title": "Windows",
+              "type": "array"
+            }
+          },
+          "required": [
+            "focus_version",
+            "data_granularity",
+            "windows"
+          ],
+          "title": "FocusExportResponse",
+          "type": "object"
+        },
+        "FocusExportWindow": {
+          "properties": {
+            "end_time_utc": {
+              "format": "date-time",
+              "title": "End Time Utc",
+              "type": "string"
+            },
+            "start_time_utc": {
+              "format": "date-time",
+              "title": "Start Time Utc",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start_time_utc",
+            "end_time_utc"
+          ],
+          "title": "FocusExportWindow",
+          "type": "object"
+        },
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "title": "Detail",
+              "type": "array"
+            }
+          },
+          "title": "HTTPValidationError",
+          "type": "object"
+        },
+        "ValidationError": {
+          "properties": {
+            "ctx": {
+              "title": "Context",
+              "type": "object"
+            },
+            "input": {
+              "title": "Input"
+            },
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "title": "Location",
+              "type": "array"
+            },
+            "msg": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "title": "Error Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError",
+          "type": "object"
+        }
+      }
+    },
+    "paths": {
+      "/focus/dry-run": {
+        "post": {
+          "description": "Return the FOCUS rows an export of the window would upload, without uploading them. The window is widened\nto whole buckets the same way /focus/export widens it. Only proxy admins can call it.",
+          "operationId": "focus_dry_run_focus_dry_run_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FocusDryRunRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/FocusDryRunResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Focus Dry Run",
+          "tags": [
+            "focus"
+          ]
+        }
+      },
+      "/focus/export": {
+        "post": {
+          "description": "Export [start_time_utc, end_time_utc) to the configured destination, one file per scheduled window, e.g. to\nbackfill history. The range is widened to whole buckets and stops before the bucket still in progress, so\nre-running a range overwrites the same files. Only proxy admins can call it.",
+          "operationId": "focus_export_focus_export_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FocusExportRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/FocusExportResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Focus Export",
+          "tags": [
+            "focus"
+          ]
+        }
+      }
+    }
+  },
   "gemini_agents": {
     "components": {
       "schemas": {

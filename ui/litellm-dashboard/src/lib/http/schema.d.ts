@@ -5517,6 +5517,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/focus/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Focus Dry Run
+         * @description Return the FOCUS rows an export of the window would upload, without uploading them. The window is widened
+         *     to whole buckets the same way /focus/export widens it. Only proxy admins can call it.
+         */
+        post: operations["focus_dry_run_focus_dry_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/focus/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Focus Export
+         * @description Export [start_time_utc, end_time_utc) to the configured destination, one file per scheduled window, e.g. to
+         *     backfill history. The range is widened to whole buckets and stops before the bucket still in progress, so
+         *     re-running a range overwrites the same files. Only proxy admins can call it.
+         */
+        post: operations["focus_export_focus_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/gateway/daily/activity": {
         parameters: {
             query?: never;
@@ -31299,6 +31342,78 @@ export interface components {
              */
             status: "open" | "resolved" | "dismissed";
         };
+        /** FocusDryRunRequest */
+        FocusDryRunRequest: {
+            /**
+             * End Time Utc
+             * @description Exclusive end of the preview window (UTC)
+             */
+            end_time_utc?: string | null;
+            /**
+             * Limit
+             * @description Maximum number of FOCUS rows to return
+             * @default 500
+             */
+            limit: number;
+            /**
+             * Start Time Utc
+             * @description Inclusive start of the preview window (UTC)
+             */
+            start_time_utc?: string | null;
+        };
+        /** FocusDryRunResponse */
+        FocusDryRunResponse: {
+            /** Data Granularity */
+            data_granularity: string;
+            /** Focus Version */
+            focus_version: string;
+            /** Rows */
+            rows: {
+                [key: string]: string | number | boolean | null;
+            }[];
+            /** Total Billed Cost */
+            total_billed_cost: number;
+            /** Total Rows */
+            total_rows: number;
+            window: components["schemas"]["FocusExportWindow"] | null;
+        };
+        /** FocusExportRequest */
+        FocusExportRequest: {
+            /**
+             * End Time Utc
+             * Format: date-time
+             * @description Exclusive end of the export range (UTC)
+             */
+            end_time_utc: string;
+            /**
+             * Start Time Utc
+             * Format: date-time
+             * @description Inclusive start of the export range (UTC)
+             */
+            start_time_utc: string;
+        };
+        /** FocusExportResponse */
+        FocusExportResponse: {
+            /** Data Granularity */
+            data_granularity: string;
+            /** Focus Version */
+            focus_version: string;
+            /** Windows */
+            windows: components["schemas"]["FocusExportWindow"][];
+        };
+        /** FocusExportWindow */
+        FocusExportWindow: {
+            /**
+             * End Time Utc
+             * Format: date-time
+             */
+            end_time_utc: string;
+            /**
+             * Start Time Utc
+             * Format: date-time
+             */
+            start_time_utc: string;
+        };
         /** FunctionCall */
         FunctionCall: {
             /** Arguments */
@@ -56952,6 +57067,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    focus_dry_run_focus_dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FocusDryRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FocusDryRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    focus_export_focus_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FocusExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FocusExportResponse"];
                 };
             };
             /** @description Validation Error */

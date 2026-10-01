@@ -284,6 +284,11 @@ LAZY_FEATURES: Final[tuple[LazyFeature, ...]] = (
         path_prefixes=("/vantage",),
     ),
     LazyFeature(
+        name="focus",
+        module_path="litellm.proxy.spend_tracking.focus_endpoints",
+        path_prefixes=("/focus",),
+    ),
+    LazyFeature(
         name="usage_ai",
         module_path="litellm.proxy.management_endpoints.usage_endpoints",
         path_prefixes=("/usage/ai",),

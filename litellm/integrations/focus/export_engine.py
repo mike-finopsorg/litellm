@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Final
 
 import polars as pl
@@ -57,6 +58,19 @@ class FocusExportEngine:
         if self.export_format == "parquet":
             return FocusParquetSerializer()
         raise NotImplementedError(f"Export format '{self.export_format}' not supported. Use 'parquet' or 'csv'.")
+
+    async def preview(
+        self,
+        *,
+        limit: int | None,
+        start_time_utc: datetime | None = None,
+        end_time_utc: datetime | None = None,
+    ) -> pl.DataFrame:
+        """Return normalized FOCUS rows for the window without serializing or uploading them."""
+        data: Final = await self._database.get_usage_data(
+            limit=limit, start_time_utc=start_time_utc, end_time_utc=end_time_utc
+        )
+        return self._transformer.transform(data)
 
     async def dry_run_export_usage_data(self, limit: int | None) -> dict[str, Any]:
         data: Final = await self._database.get_usage_data(limit=limit)
