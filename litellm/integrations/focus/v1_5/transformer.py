@@ -56,6 +56,8 @@ FOCUS_1_5_SCHEMA: Final = pl.Schema(
         ("PricingQuantity", _COST),
         ("PricingUnit", pl.String),
         ("PrincipalId", pl.String),
+        ("RegionId", pl.String),
+        ("RegionName", pl.String),
         ("RequesterDetails", pl.String),
         ("ResourceId", pl.String),
         ("ResourceType", pl.String),
@@ -244,6 +246,8 @@ class Focus15Transformer:
             _cost(pl.col("quantity")).alias("PricingQuantity"),
             unit.alias("PricingUnit"),
             pl.col("principal_id").alias("PrincipalId"),
+            pl.lit(billing.region_id, dtype=pl.String).alias("RegionId"),
+            pl.lit(billing.region_name, dtype=pl.String).alias("RegionName"),
             _json_column(
                 ("principal_id", "principal_name", "principal_email", "credential_id", "credential_name"),
                 _requester_details,

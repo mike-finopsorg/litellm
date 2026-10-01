@@ -28,6 +28,8 @@ class FocusBillingSettings:
     billing_account_name: str
     sub_account_id: str
     sub_account_name: str
+    region_id: str | None = None
+    region_name: str | None = None
 
 
 def default_account_label(hostname: str | None = None) -> str:
@@ -77,19 +79,26 @@ def _parse_include_spend(raw: str) -> bool:
 
 
 def parse_focus_billing_settings(env: Mapping[str, str], *, hostname: str | None = None) -> FocusBillingSettings:
-    """Read FOCUS_INCLUDE_SPEND and the FOCUS_BILLING_* / FOCUS_ACCOUNT_* values, treating empty values as unset."""
+    """Read FOCUS_INCLUDE_SPEND and the FOCUS_BILLING_* / FOCUS_ACCOUNT_* / FOCUS_REGION_* values, treating empty
+    values as unset."""
     label: Final = default_account_label(hostname)
 
     def _value(name: str) -> str:
         return env.get(name, "").strip()
 
     include_spend: Final = _value("FOCUS_INCLUDE_SPEND").lower()
+    region_id: Final = _value("FOCUS_REGION_ID") or None
+    region_name: Final = _value("FOCUS_REGION_NAME") or None
+    if (region_id is None) != (region_name is None):
+        raise ValueError("FOCUS_REGION_ID and FOCUS_REGION_NAME must be set together")
     return FocusBillingSettings(
         include_spend=_parse_include_spend(include_spend) if include_spend else True,
         billing_account_id=_value("FOCUS_BILLING_ID") or label,
         billing_account_name=_value("FOCUS_BILLING_NAME") or label,
         sub_account_id=_value("FOCUS_ACCOUNT_ID") or label,
         sub_account_name=_value("FOCUS_ACCOUNT_NAME") or label,
+        region_id=region_id,
+        region_name=region_name,
     )
 
 

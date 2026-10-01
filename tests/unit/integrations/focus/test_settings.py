@@ -98,3 +98,23 @@ def test_blank_billing_values_fall_back_to_the_hostname_label() -> None:
 def test_unsupported_include_spend_is_rejected(raw: str) -> None:
     with pytest.raises(ValueError, match="FOCUS_INCLUDE_SPEND"):
         parse_focus_billing_settings({"FOCUS_INCLUDE_SPEND": raw}, hostname="spark")
+
+
+def test_region_defaults_to_null() -> None:
+    settings = parse_focus_billing_settings({}, hostname="spark")
+
+    assert (settings.region_id, settings.region_name) == (None, None)
+
+
+def test_region_comes_from_focus_env() -> None:
+    settings = parse_focus_billing_settings(
+        {"FOCUS_REGION_ID": " us-east ", "FOCUS_REGION_NAME": "US East"}, hostname="spark"
+    )
+
+    assert (settings.region_id, settings.region_name) == ("us-east", "US East")
+
+
+@pytest.mark.parametrize("env", ({"FOCUS_REGION_ID": "us-east"}, {"FOCUS_REGION_NAME": "US East"}))
+def test_region_id_and_name_must_be_set_together(env: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match="FOCUS_REGION_ID and FOCUS_REGION_NAME must be set together"):
+        parse_focus_billing_settings(env, hostname="spark")

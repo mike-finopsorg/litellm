@@ -89,6 +89,8 @@ def test_token_bucket_maps_onto_every_focus_column() -> None:
         "PricingQuantity": Decimal(4000),
         "PricingUnit": "Tokens",
         "PrincipalId": "hermes",
+        "RegionId": None,
+        "RegionName": None,
         "RequesterDetails": [
             {"key": "Principal", "value": {"Type": "User", "Name": "Hermes Agent", "Email": "hermes@example.test"}},
             {"key": "Credential", "value": {"Type": "API Key", "Name": "hermes-primary"}},
@@ -161,6 +163,21 @@ def test_health_check_key_is_a_service_account_key() -> None:
 
 def test_tags_are_null_without_request_tags_or_team() -> None:
     assert _row(request_tags="[]", team_id=None, team_alias=None)["Tags"] is None
+
+
+def test_configured_region_is_stamped_on_every_row() -> None:
+    billing = FocusBillingSettings(
+        include_spend=True,
+        billing_account_id="billing-1",
+        billing_account_name="Example AI Platform",
+        sub_account_id="account-1",
+        sub_account_name="Example Account",
+        region_id="us-east",
+        region_name="US East",
+    )
+    frame = _transform(_bucket(), _bucket(meter="Output Tokens"), billing=billing)
+
+    assert set(frame.select("RegionId", "RegionName").rows()) == {("us-east", "US East")}
 
 
 def test_other_usage_is_priced_per_request() -> None:
