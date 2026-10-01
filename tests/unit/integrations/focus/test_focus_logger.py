@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import pytest
 
+from litellm.integrations.focus.database import FocusLiteLLMDatabase
 from litellm.integrations.focus.focus_logger import FocusLogger
+from litellm.integrations.focus.schema import FOCUS_NORMALIZED_SCHEMA
 from litellm.integrations.focus.settings import FocusExportSettings
+from litellm.integrations.focus.v1_5.database import FocusSpendLogsDatabase
+from litellm.integrations.focus.v1_5.transformer import FOCUS_1_5_SCHEMA
 
 
 def test_settings_default_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,3 +40,26 @@ def test_invalid_env_value_fails_at_construction(monkeypatch: pytest.MonkeyPatch
     with pytest.raises(ValueError, match=env_var):
         FocusLogger()
 
+
+
+def test_1_5_with_the_default_hourly_frequency_fails_at_construction(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FOCUS_FREQUENCY", raising=False)
+
+    with pytest.raises(ValueError, match="FOCUS_FREQUENCY=daily"):
+        FocusLogger(focus_version="1.5")
+
+
+def test_1_5_engine_reads_spend_logs_and_emits_the_1_5_schema() -> None:
+    engine = FocusLogger(
+        focus_version="1.5", frequency="daily", destination_config={"bucket_name": "focus-test"}
+    )._ensure_engine()
+
+    assert isinstance(engine._database, FocusSpendLogsDatabase)
+    assert engine._transformer.schema == FOCUS_1_5_SCHEMA
+
+
+def test_default_engine_keeps_the_1_2_pipeline() -> None:
+    engine = FocusLogger(destination_config={"bucket_name": "focus-test"})._ensure_engine()
+
+    assert isinstance(engine._database, FocusLiteLLMDatabase)
+    assert engine._transformer.schema == FOCUS_NORMALIZED_SCHEMA

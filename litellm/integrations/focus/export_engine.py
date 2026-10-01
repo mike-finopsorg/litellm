@@ -11,7 +11,20 @@ from litellm._logging import verbose_logger
 from .database import FocusLiteLLMDatabase
 from .destinations import FocusDestinationFactory, FocusTimeWindow
 from .serializers import FocusCsvSerializer, FocusParquetSerializer, FocusSerializer
+from .settings import FocusExportSettings
 from .transformer import FocusTransformer
+from .v1_5.database import FocusSpendLogsDatabase
+from .v1_5.transformer import Focus15Transformer
+
+
+def _version_components(
+    settings: FocusExportSettings,
+) -> tuple[FocusLiteLLMDatabase, FocusTransformer] | tuple[FocusSpendLogsDatabase, Focus15Transformer]:
+    match settings.version:
+        case "1.2":
+            return FocusLiteLLMDatabase(), FocusTransformer()
+        case "1.5":
+            return FocusSpendLogsDatabase(granularity=settings.data_granularity), Focus15Transformer()
 
 
 class FocusExportEngine:
@@ -24,6 +37,7 @@ class FocusExportEngine:
         export_format: str,
         prefix: str,
         destination_config: dict[str, Any] | None = None,
+        settings: FocusExportSettings | None = None,
     ) -> None:
         self.provider = provider
         self.export_format = export_format
@@ -34,8 +48,7 @@ class FocusExportEngine:
             config=destination_config,
         )
         self._serializer = self._init_serializer()
-        self._transformer = FocusTransformer()
-        self._database = FocusLiteLLMDatabase()
+        self._database, self._transformer = _version_components(settings or FocusExportSettings())
 
     def _init_serializer(self) -> FocusSerializer:
         if self.export_format == "csv":

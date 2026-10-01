@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, Literal, TypeAlias
 
-FocusVersion: TypeAlias = Literal["1.2"]
+FocusVersion: TypeAlias = Literal["1.2", "1.5"]
 FocusDataGranularity: TypeAlias = Literal["daily"]
 
 DEFAULT_FOCUS_VERSION: Final[FocusVersion] = "1.2"
@@ -20,10 +20,10 @@ class FocusExportSettings:
 
 def _parse_version(raw: str) -> FocusVersion:
     match raw:
-        case "1.2":
+        case "1.2" | "1.5":
             return raw
         case _:
-            raise ValueError(f"Unsupported FOCUS_VERSION '{raw}'. Supported: 1.2")
+            raise ValueError(f"Unsupported FOCUS_VERSION '{raw}'. Supported: 1.2, 1.5")
 
 
 def _parse_data_granularity(raw: str) -> FocusDataGranularity:
@@ -46,6 +46,17 @@ def parse_focus_export_settings(*, version: str | None, data_granularity: str | 
     )
 
 
+def validate_export_frequency(settings: FocusExportSettings, frequency: str) -> None:
+    """Require 1.5 exports to cover whole charge periods so no bucket is split across files."""
+    if settings.version != "1.5":
+        return
+    if frequency != settings.data_granularity:
+        raise ValueError(
+            f"FOCUS_VERSION=1.5 with FOCUS_DATA_GRANULARITY={settings.data_granularity} "
+            f"requires FOCUS_FREQUENCY={settings.data_granularity}, got '{frequency}'"
+        )
+
+
 __all__ = (
     "DEFAULT_FOCUS_DATA_GRANULARITY",
     "DEFAULT_FOCUS_VERSION",
@@ -53,4 +64,5 @@ __all__ = (
     "FocusExportSettings",
     "FocusVersion",
     "parse_focus_export_settings",
+    "validate_export_frequency",
 )
