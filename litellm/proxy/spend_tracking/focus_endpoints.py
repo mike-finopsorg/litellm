@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Annotated, Final, Protocol
 
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
 
 router: Final = APIRouter()
 
-_ROWS_ADAPTER: Final = TypeAdapter(tuple[dict[str, FocusCell], ...])
+_ROWS_ADAPTER: Final = TypeAdapter(tuple[Mapping[str, FocusCell], ...])
 
 
 class _ErrorDetail(TypedDict):
@@ -87,7 +88,7 @@ def _column_total(frame: pl.DataFrame, column: str) -> float:
     return float(frame.get_column(column).sum() or 0)
 
 
-def _json_rows(frame: pl.DataFrame) -> tuple[dict[str, FocusCell], ...]:
+def _json_rows(frame: pl.DataFrame) -> tuple[Mapping[str, FocusCell], ...]:
     import polars as pl
 
     readable: Final = frame.with_columns(
@@ -99,7 +100,7 @@ def _json_rows(frame: pl.DataFrame) -> tuple[dict[str, FocusCell], ...]:
 
 @router.post(
     "/focus/dry-run",
-    tags=("FOCUS",),
+    tags=["FOCUS"],
     response_model=FocusDryRunResponse,
 )
 async def focus_dry_run(
@@ -146,7 +147,7 @@ async def focus_dry_run(
 
 @router.post(
     "/focus/export",
-    tags=("FOCUS",),
+    tags=["FOCUS"],
     response_model=FocusExportResponse,
 )
 async def focus_export(

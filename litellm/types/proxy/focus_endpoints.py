@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from typing import TypeAlias
 
@@ -59,7 +60,7 @@ class FocusDryRunResponse(BaseModel):
     total_effective_cost: float
     total_list_cost: float
     returned_rows: int
-    rows: tuple[dict[str, FocusCell], ...]
+    rows: tuple[Mapping[str, FocusCell], ...]
 
 
 class FocusExportResponse(BaseModel):

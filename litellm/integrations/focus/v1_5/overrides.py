@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final, Protocol
 
@@ -83,7 +84,7 @@ def resolve_columns(
 
 class _DeploymentInfo(Protocol):
     @property
-    def model_extra(self) -> dict[str, object] | None: ...
+    def model_extra(self) -> Mapping[str, object] | None: ...
 
 
 class _Deployment(Protocol):

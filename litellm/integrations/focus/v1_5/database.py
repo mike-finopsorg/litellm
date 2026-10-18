@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from datetime import datetime
 from typing import Final, Literal, Protocol, TypeAlias
 
@@ -173,18 +173,24 @@ _BUCKETS_ADAPTER: Final = TypeAdapter(tuple[SpendLogBucket, ...])
 
 
 class SupportsQueryRaw(Protocol):
-    async def query_raw(self, query: str, *args: object) -> Sequence[Mapping[str, object]]: ...
+    async def query_raw(self, query: str, *args: object) -> object: ...
+
+
+class _ProxyDatabase:
+    async def query_raw(self, query: str, *args: object) -> object:
+        from litellm.proxy.proxy_server import prisma_client
+
+        if prisma_client is None:
+            raise RuntimeError(
+                "Database not connected. Connect a database to your proxy - "
+                "https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"
+            )
+        rows: Final[object] = await prisma_client.db.query_raw(query, *args)
+        return rows
 
 
 def _proxy_db() -> SupportsQueryRaw:
-    from litellm.proxy.proxy_server import prisma_client
-
-    if prisma_client is None:
-        raise RuntimeError(
-            "Database not connected. Connect a database to your proxy - "
-            "https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"
-        )
-    return prisma_client.db
+    return _ProxyDatabase()
 
 
 def _proxy_spend_logs_disabled() -> bool:
