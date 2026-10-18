@@ -71,7 +71,7 @@ def get_focus_export_target() -> FocusExportTarget:
     return registered[0]
 
 
-def _require_admin(user_api_key_dict: UserAPIKeyAuth) -> None:
+def _require_admin(user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)]) -> None:
     if user_api_key_dict.user_role != LitellmUserRoles.PROXY_ADMIN:
         raise _http_error(403, CommonProxyErrors.not_allowed_access.value)
 
@@ -101,27 +101,22 @@ def _json_rows(frame: pl.DataFrame) -> tuple[Mapping[str, FocusCell], ...]:
 @router.post(
     "/focus/dry-run",
     tags=["FOCUS"],
+    dependencies=[Depends(_require_admin)],
     response_model=FocusDryRunResponse,
 )
 async def focus_dry_run(
     request: FocusDryRunRequest,
-    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
     target: Annotated[FocusExportTarget, Depends(get_focus_export_target)],
 ) -> FocusDryRunResponse:
-    """Return the FOCUS rows an export of the window would upload, without uploading them. Totals cover every row
-    in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the same way
-    /focus/export widens it. Only proxy admins can call it."""
-    _require_admin(user_api_key_dict)
+    """Return the FOCUS rows an export of [start_time_utc, end_time_utc) would upload, without uploading them. Totals
+    cover every row in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the
+    same way /focus/export widens it. Only proxy admins can call it."""
     try:
-        windows: Final = (
-            aligned_windows(
-                start_time_utc=request.start_time_utc,
-                end_time_utc=request.end_time_utc,
-                frequency=target.frequency,
-                now=datetime.now(timezone.utc),
-            )
-            if request.start_time_utc is not None and request.end_time_utc is not None
-            else ()
+        windows: Final = aligned_windows(
+            start_time_utc=request.start_time_utc,
+            end_time_utc=request.end_time_utc,
+            frequency=target.frequency,
+            now=datetime.now(timezone.utc),
         )
         window: Final = _window(windows)
         frame: Final = await target.preview(
@@ -148,17 +143,17 @@ async def focus_dry_run(
 @router.post(
     "/focus/export",
     tags=["FOCUS"],
+    dependencies=[Depends(_require_admin)],
     response_model=FocusExportResponse,
 )
 async def focus_export(
     request: FocusExportRequest,
-    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
     target: Annotated[FocusExportTarget, Depends(get_focus_export_target)],
 ) -> FocusExportResponse:
     """Export [start_time_utc, end_time_utc) to the configured destination, one file per scheduled window, e.g. to
     backfill history. The range is widened to whole buckets and stops before the bucket still in progress, so
-    re-running a range overwrites the same files. Only proxy admins can call it."""
-    _require_admin(user_api_key_dict)
+    re-running a range overwrites the same files. With FOCUS_VERSION=1.2 the range selects daily rollups by their
+    last update time rather than by usage date. Only proxy admins can call it."""
     try:
         windows: Final = await target.export_range(
             start_time_utc=request.start_time_utc, end_time_utc=request.end_time_utc

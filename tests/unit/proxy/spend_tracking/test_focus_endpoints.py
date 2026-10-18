@@ -112,7 +112,14 @@ def test_dry_run_returns_json_safe_rows_for_the_widened_window(target: _Target) 
 
 
 def test_dry_run_totals_cover_every_row_while_limit_caps_the_rows_returned(target: _Target) -> None:
-    body = _client(target).post("/focus/dry-run", json={"limit": 1}).json()
+    body = (
+        _client(target)
+        .post(
+            "/focus/dry-run",
+            json={"start_time_utc": "2026-09-30T00:00:00Z", "end_time_utc": "2026-10-01T00:00:00Z", "limit": 1},
+        )
+        .json()
+    )
 
     assert (body["total_rows"], body["total_list_cost"], body["returned_rows"], len(body["rows"])) == (
         2,
@@ -122,10 +129,10 @@ def test_dry_run_totals_cover_every_row_while_limit_caps_the_rows_returned(targe
     )
 
 
-def test_dry_run_without_a_window_previews_everything(target: _Target) -> None:
-    response = _client(target).post("/focus/dry-run", json={})
+def test_dry_run_requires_a_window(target: _Target) -> None:
+    response = _client(target).post("/focus/dry-run", json={"limit": 10})
 
-    assert (response.status_code, response.json()["window"], target.previews) == (200, None, [(None, None, None)])
+    assert (response.status_code, target.previews) == (422, [])
 
 
 def test_export_returns_the_windows_it_uploaded(target: _Target) -> None:
@@ -173,7 +180,36 @@ def test_only_proxy_admins_can_preview_or_export(target: _Target, path: str) -> 
 
 
 def test_endpoints_explain_how_to_enable_focus_when_the_callback_is_missing() -> None:
-    response = _client(None).post("/focus/dry-run", json={})
+    response = _client(None).post(
+        "/focus/dry-run", json={"start_time_utc": "2026-09-30T00:00:00Z", "end_time_utc": "2026-10-01T00:00:00Z"}
+    )
 
     assert response.status_code == 404
     assert "litellm_settings.callbacks" in response.json()["detail"]["error"]
+
+
+def test_non_admins_get_403_even_when_focus_is_not_enabled() -> None:
+    response = _client(None, role=LitellmUserRoles.INTERNAL_USER).post(
+        "/focus/dry-run", json={"start_time_utc": "2026-09-30T00:00:00Z", "end_time_utc": "2026-10-01T00:00:00Z"}
+    )
+
+    assert response.status_code == 403
+
+
+def test_times_without_an_offset_are_read_as_utc(target: _Target) -> None:
+    response = _client(target).post(
+        "/focus/export", json={"start_time_utc": "2026-09-30T00:00:00", "end_time_utc": "2026-10-01T00:00:00Z"}
+    )
+
+    assert response.status_code == 200
+    assert target.exports == [(DAY, NEXT_DAY)]
+
+
+@pytest.mark.parametrize("path", ("/focus/dry-run", "/focus/export"))
+def test_mixed_naive_and_aware_times_are_validated_not_crashed(target: _Target, path: str) -> None:
+    response = _client(target).post(
+        path, json={"start_time_utc": "2026-09-30T00:00:00Z", "end_time_utc": "2026-09-30T00:00:00"}
+    )
+
+    assert response.status_code == 422
+    assert (target.previews, target.exports) == ([], [])

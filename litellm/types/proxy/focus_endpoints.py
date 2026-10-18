@@ -3,43 +3,47 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 
 FocusCell: TypeAlias = str | float | int | bool | None
 
 
-def _require_end_after_start(start: datetime | None, end: datetime | None) -> None:
-    if start is not None and end is not None and end <= start:
-        raise ValueError("end_time_utc must be after start_time_utc")
+def _as_utc(moment: datetime) -> datetime:
+    return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment.astimezone(timezone.utc)
 
 
-class FocusDryRunRequest(BaseModel):
+class _FocusRange(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    start_time_utc: datetime | None = Field(None, description="Inclusive start of the preview window (UTC)")
-    end_time_utc: datetime | None = Field(None, description="Exclusive end of the preview window (UTC)")
+    start_time_utc: datetime = Field(
+        ..., description="Inclusive start of the range in UTC; a value without an offset is read as UTC"
+    )
+    end_time_utc: datetime = Field(
+        ..., description="Exclusive end of the range in UTC; a value without an offset is read as UTC"
+    )
+
+    @field_validator("start_time_utc", "end_time_utc")
+    @classmethod
+    def _utc(cls, value: datetime) -> datetime:
+        return _as_utc(value)
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> Self:
+        if self.end_time_utc <= self.start_time_utc:
+            raise ValueError("end_time_utc must be after start_time_utc")
+        return self
+
+
+class FocusDryRunRequest(_FocusRange):
     limit: int = Field(500, ge=1, le=5000, description="Maximum number of FOCUS rows to return; totals cover all rows")
 
-    @model_validator(mode="after")
-    def _end_after_start(self) -> Self:
-        _require_end_after_start(self.start_time_utc, self.end_time_utc)
-        return self
 
-
-class FocusExportRequest(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    start_time_utc: datetime = Field(..., description="Inclusive start of the export range (UTC)")
-    end_time_utc: datetime = Field(..., description="Exclusive end of the export range (UTC)")
-
-    @model_validator(mode="after")
-    def _end_after_start(self) -> Self:
-        _require_end_after_start(self.start_time_utc, self.end_time_utc)
-        return self
+class FocusExportRequest(_FocusRange):
+    pass
 
 
 class FocusExportWindow(BaseModel):
