@@ -447,7 +447,7 @@ async def test_different_request_tags_are_separate_rows(db):
 
 async def test_export_holds_the_hashed_credential_never_the_raw_key(db):
     rows: Final = await _export(db)
-    csv: Final = FocusCsvSerializer().serialize(rows).decode()
+    csv: Final = FocusCsvSerializer(version="1.5").serialize(rows).decode()
     raw_key_rows: Final = rows.filter(_model(RAW_KEY_MODEL))
 
     assert RAW_KEY not in csv

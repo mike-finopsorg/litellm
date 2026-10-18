@@ -62,12 +62,6 @@ def test_1_5_floats_never_use_scientific_notation():
     assert result.decode().splitlines() == ["BilledCost", "0.0000001234"]
 
 
-def test_default_float_formatting_is_unchanged():
-    result = FocusCsvSerializer().serialize(_tiny_cost_frame())
-
-    assert result.decode().splitlines() == ["BilledCost", "1.234e-7"]
-
-
 def _timestamp_and_float_frame() -> pl.DataFrame:
     return pl.DataFrame(
         {
