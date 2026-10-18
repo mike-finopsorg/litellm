@@ -302,7 +302,9 @@ def test_1_5_logger_rejects_a_broken_focus_block_when_the_job_is_registered(monk
         FocusLogger(focus_version="1.5", frequency="daily").validate_deployment_overrides()
 
 
-def test_1_2_logger_ignores_focus_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_1_2_logger_ignores_focus_blocks(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(proxy_server, "llm_router", _router_with_a_broken_focus_block())
 
     FocusLogger().validate_deployment_overrides()

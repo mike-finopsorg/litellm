@@ -52,12 +52,15 @@ def test_1_5_daily_rejects_frequencies_that_split_a_day(frequency: str) -> None:
         validate_export_frequency(settings, frequency)
 
 
-def test_1_5_daily_accepts_daily_frequency() -> None:
+def test_1_5_daily_accepts_daily_frequency(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
+) -> None:
     validate_export_frequency(FocusExportSettings(version="1.5", data_granularity="daily"), "daily")
 
 
 @pytest.mark.parametrize("frequency", ("hourly", "daily", "interval"))
-def test_1_2_keeps_accepting_every_frequency(frequency: str) -> None:
+def test_1_2_keeps_accepting_every_frequency(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
+    frequency: str,
+) -> None:
     validate_export_frequency(FocusExportSettings(version="1.2", data_granularity="daily"), frequency)
 
 
@@ -158,7 +161,9 @@ def test_1_2_rejects_hourly_granularity() -> None:
 
 
 @pytest.mark.parametrize("frequency", ("hourly", "daily"))
-def test_1_5_hourly_accepts_frequencies_made_of_whole_hours(frequency: str) -> None:
+def test_1_5_hourly_accepts_frequencies_made_of_whole_hours(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
+    frequency: str,
+) -> None:
     validate_export_frequency(FocusExportSettings(version="1.5", data_granularity="hourly"), frequency)
 
 

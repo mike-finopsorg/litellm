@@ -144,5 +144,7 @@ def test_validation_names_the_first_invalid_deployment() -> None:
     "router",
     (None, _Router({}), _Router({"ok": _Deployment(_Info({"focus": {"include_spend": False}}))})),
 )
-def test_validation_passes_without_a_router_or_with_valid_blocks(router: _Router | None) -> None:
+def test_validation_passes_without_a_router_or_with_valid_blocks(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
+    router: _Router | None,
+) -> None:
     validate_deployment_overrides(router)

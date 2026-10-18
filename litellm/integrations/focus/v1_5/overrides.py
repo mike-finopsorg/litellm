@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol
 
@@ -110,7 +110,7 @@ def deployment_overrides(router: SupportsGetDeployment | None, model_id: str) ->
 
 
 class SupportsListDeployments(SupportsGetDeployment, Protocol):
-    def get_model_ids(self) -> list[str]: ...
+    def get_model_ids(self) -> Sequence[str]: ...
 
 
 def validate_deployment_overrides(router: SupportsListDeployments | None) -> None:
