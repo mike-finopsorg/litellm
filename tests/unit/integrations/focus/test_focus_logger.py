@@ -234,14 +234,26 @@ def test_aligned_windows_reject_interval_frequency() -> None:
         aligned_windows(start_time_utc=_at(10), end_time_utc=_at(11), frequency="interval", now=_at(20))
 
 
-def test_aligned_windows_cap_the_number_of_windows() -> None:
-    with pytest.raises(ValueError, match="limit is 744"):
+@pytest.mark.parametrize("frequency", ("hourly", "daily"))
+def test_aligned_windows_cap_the_span_at_31_days(frequency: str) -> None:
+    with pytest.raises(ValueError, match="limit is 31 days"):
         aligned_windows(
             start_time_utc=datetime(2026, 1, 1, tzinfo=timezone.utc),
             end_time_utc=datetime(2026, 3, 1, tzinfo=timezone.utc),
-            frequency="hourly",
+            frequency=frequency,
             now=_at(20),
         )
+
+
+def test_aligned_windows_allow_a_full_31_day_span() -> None:
+    windows = aligned_windows(
+        start_time_utc=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        end_time_utc=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        frequency="daily",
+        now=_at(20),
+    )
+
+    assert len(windows) == 31
 
 
 class _RecordingFocusLogger(FocusLogger):

@@ -25,7 +25,7 @@ else:
 
 FOCUS_USAGE_DATA_JOB_NAME: Final = "focus_export_usage_data"
 DEFAULT_DRY_RUN_LIMIT: Final = 500
-MAX_EXPORT_WINDOWS: Final = 31 * 24
+MAX_EXPORT_SPAN: Final = timedelta(days=31)
 
 
 def _bucket_step(frequency: str) -> timedelta:
@@ -57,9 +57,11 @@ def aligned_windows(
     end_floor: Final = _floor(end_time_utc, step)
     widened_end: Final = end_floor if end_floor == _to_utc(end_time_utc) else end_floor + step
     end: Final = min(widened_end, _floor(now, step))
+    if end - start > MAX_EXPORT_SPAN:
+        raise ValueError(
+            f"Manual FOCUS export spans {(end - start).days} days; the limit is {MAX_EXPORT_SPAN.days} days"
+        )
     count: Final = max(0, (end - start) // step)
-    if count > MAX_EXPORT_WINDOWS:
-        raise ValueError(f"Manual FOCUS export spans {count} windows; the limit is {MAX_EXPORT_WINDOWS}")
     return tuple(
         FocusTimeWindow(start_time=start + index * step, end_time=start + (index + 1) * step, frequency=frequency)
         for index in range(count)
