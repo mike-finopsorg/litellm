@@ -109,6 +109,18 @@ def deployment_overrides(router: SupportsGetDeployment | None, model_id: str) ->
         raise ValueError(f"Invalid model_info.focus on deployment {model_id}: {exc}") from exc
 
 
+class SupportsListDeployments(SupportsGetDeployment, Protocol):
+    def get_model_ids(self) -> list[str]: ...
+
+
+def validate_deployment_overrides(router: SupportsListDeployments | None) -> None:
+    """Raise for the first deployment whose ``model_info.focus`` block is invalid."""
+    if router is None:
+        return
+    for model_id in router.get_model_ids():
+        deployment_overrides(router, model_id)
+
+
 def proxy_deployment_overrides(model_id: str) -> FocusDeploymentOverrides | None:
     from litellm.proxy.proxy_server import llm_router
 
@@ -120,7 +132,9 @@ __all__ = (
     "ResolveDeploymentOverrides",
     "ResolvedColumns",
     "SupportsGetDeployment",
+    "SupportsListDeployments",
     "deployment_overrides",
     "proxy_deployment_overrides",
     "resolve_columns",
+    "validate_deployment_overrides",
 )

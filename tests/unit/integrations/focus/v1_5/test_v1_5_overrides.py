@@ -13,6 +13,7 @@ from litellm.integrations.focus.v1_5.overrides import (
     ResolvedColumns,
     deployment_overrides,
     resolve_columns,
+    validate_deployment_overrides,
 )
 
 BILLING = FocusBillingSettings(
@@ -42,6 +43,9 @@ class _Router:
 
     def get_deployment(self, model_id: str) -> _Deployment | None:
         return self.deployments.get(model_id)
+
+    def get_model_ids(self) -> list[str]:
+        return list(self.deployments)
 
 
 def test_env_settings_and_provider_names_apply_without_overrides() -> None:
@@ -123,3 +127,23 @@ def test_litellm_router_keeps_the_focus_block_from_model_info() -> None:
     assert deployment_overrides(router, "spark-1") == FocusDeploymentOverrides(
         region_id="on-prem", region_name="Home Lab"
     )
+
+
+def test_validation_names_the_first_invalid_deployment() -> None:
+    router = _Router(
+        {
+            "ok": _Deployment(_Info({"focus": {"region_id": "us", "region_name": "US"}})),
+            "bad": _Deployment(_Info({"focus": {"region_id": "us"}})),
+        }
+    )
+
+    with pytest.raises(ValueError, match="deployment bad"):
+        validate_deployment_overrides(router)
+
+
+@pytest.mark.parametrize(
+    "router",
+    (None, _Router({}), _Router({"ok": _Deployment(_Info({"focus": {"include_spend": False}}))})),
+)
+def test_validation_passes_without_a_router_or_with_valid_blocks(router: _Router | None) -> None:
+    validate_deployment_overrides(router)

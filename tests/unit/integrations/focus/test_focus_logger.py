@@ -6,6 +6,7 @@ from decimal import Decimal
 import polars as pl
 import pytest
 
+from litellm import Router
 from litellm.integrations.focus.database import FocusLiteLLMDatabase
 from litellm.integrations.focus.destinations.base import FocusTimeWindow
 from litellm.integrations.focus.focus_logger import FocusLogger, aligned_windows
@@ -273,3 +274,28 @@ async def test_export_range_exports_each_aligned_window_in_order() -> None:
 
     assert logger.exported == [(window, 7) for window in windows]
     assert _bounds(windows) == [(_at(10), _at(11)), (_at(11), _at(12)), (_at(12), _at(13))]
+
+
+def _router_with_a_broken_focus_block() -> Router:
+    return Router(
+        model_list=[
+            {
+                "model_name": "spark",
+                "litellm_params": {"model": "hosted_vllm/spark", "api_base": "http://localhost:1"},
+                "model_info": {"id": "spark-1", "focus": {"region_id": "on-prem"}},
+            }
+        ]
+    )
+
+
+def test_1_5_logger_rejects_a_broken_focus_block_when_the_job_is_registered(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(proxy_server, "llm_router", _router_with_a_broken_focus_block())
+
+    with pytest.raises(ValueError, match="deployment spark-1"):
+        FocusLogger(focus_version="1.5", frequency="daily").validate_deployment_overrides()
+
+
+def test_1_2_logger_ignores_focus_blocks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(proxy_server, "llm_router", _router_with_a_broken_focus_block())
+
+    FocusLogger().validate_deployment_overrides()

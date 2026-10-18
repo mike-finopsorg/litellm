@@ -193,6 +193,16 @@ class FocusLogger(CustomLogger):
         engine: Final = self._ensure_engine()
         return await engine.dry_run_export_usage_data(limit=limit)
 
+    def validate_deployment_overrides(self) -> None:
+        """Reject invalid ``model_info.focus`` blocks when the export job is registered, before the first export."""
+        if self.settings.version != "1.5":
+            return
+        from litellm.proxy.proxy_server import llm_router
+
+        from .v1_5.overrides import validate_deployment_overrides
+
+        validate_deployment_overrides(llm_router)
+
     async def initialize_focus_export_job(self) -> None:
         """Entry point for scheduler jobs to run export cycle with locking."""
         from litellm.proxy.proxy_server import proxy_logging_obj
@@ -233,6 +243,7 @@ class FocusLogger(CustomLogger):
             return
 
         focus_logger: Final = cast(FocusLogger, focus_loggers[0])
+        focus_logger.validate_deployment_overrides()
         trigger_kwargs: Final = focus_logger._build_scheduler_trigger()
         scheduler.add_job(
             focus_logger.initialize_focus_export_job,
