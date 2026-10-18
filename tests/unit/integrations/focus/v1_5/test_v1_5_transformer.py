@@ -114,6 +114,7 @@ def test_token_bucket_maps_onto_every_focus_column() -> None:
         "ServiceSubcategory": "Generative AI",
         "SkuId": "openai/gpt-5.4-mini/input-tokens",
         "SkuMeter": "Input Tokens",
+        "SkuPriceDetails": None,
         "SkuPriceId": "openai/gpt-5.4-mini/input-tokens/default",
         "SubAccountId": "account-1",
         "SubAccountName": "Example Account",
