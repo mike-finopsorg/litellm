@@ -104,7 +104,7 @@ async def _spend_log(
     request_tags: tuple[str, ...] = (),
     model_id: str | None = None,
 ) -> None:
-    await db.execute_raw(
+    await db.db.execute_raw(
         'INSERT INTO "LiteLLM_SpendLogs" ("request_id", "call_type", "api_key", "startTime", "endTime", "user", '
         '"model", "custom_llm_provider", "team_id", "spend", "prompt_tokens", "completion_tokens", "metadata", '
         '"request_tags", "model_id", "model_group") '
@@ -147,7 +147,7 @@ def _plain(spend: float, **metadata: object) -> dict[str, object]:
 
 @pytest.fixture(scope="module", autouse=True)
 async def seeded(db):
-    await db.execute_raw(
+    await db.db.execute_raw(
         'INSERT INTO "LiteLLM_UserTable" ("user_id", "user_alias", "user_email") VALUES ($1, $2, $3)',
         HERMES,
         "Hermes Agent",
@@ -310,8 +310,8 @@ async def seeded(db):
         api_key=payload_api_key,
     )
     yield
-    await db.execute_raw('DELETE FROM "LiteLLM_SpendLogs" WHERE "request_id" LIKE $1', f"focus-{RUN}-%")
-    await db.execute_raw('DELETE FROM "LiteLLM_UserTable" WHERE "user_id" = $1', HERMES)
+    await db.db.execute_raw('DELETE FROM "LiteLLM_SpendLogs" WHERE "request_id" LIKE $1', f"focus-{RUN}-%")
+    await db.db.execute_raw('DELETE FROM "LiteLLM_UserTable" WHERE "user_id" = $1', HERMES)
 
 
 def _model(model: str) -> pl.Expr:
@@ -325,7 +325,7 @@ async def _export(
     overrides: Mapping[str, FocusDeploymentOverrides] = MappingProxyType({}),
 ) -> pl.DataFrame:
     database: Final = FocusSpendLogsDatabase(
-        granularity=granularity, resolve_db=lambda: db, spend_logs_disabled=lambda: False
+        granularity=granularity, resolve_db=lambda: db.db, spend_logs_disabled=lambda: False
     )
     frame: Final = await database.get_usage_data(start_time_utc=DAY, end_time_utc=NEXT_DAY)
     settings: Final = FocusExportSettings(version="1.5", billing=BILLING)
