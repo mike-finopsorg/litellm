@@ -112,16 +112,21 @@ def parse_focus_export_settings(
     """Validate raw version/granularity values and FOCUS_* env values, treating empty values as unset."""
     stripped_version: Final = (version or "").strip()
     stripped_granularity: Final = (data_granularity or "").strip().lower()
-    settings: Final = FocusExportSettings(
-        version=_parse_version(stripped_version) if stripped_version else DEFAULT_FOCUS_VERSION,
-        data_granularity=(
-            _parse_data_granularity(stripped_granularity) if stripped_granularity else DEFAULT_FOCUS_DATA_GRANULARITY
-        ),
-        billing=parse_focus_billing_settings(env, hostname=hostname),
+    parsed_version: Final = _parse_version(stripped_version) if stripped_version else DEFAULT_FOCUS_VERSION
+    parsed_granularity: Final = (
+        _parse_data_granularity(stripped_granularity) if stripped_granularity else DEFAULT_FOCUS_DATA_GRANULARITY
     )
-    if settings.version == "1.2" and settings.data_granularity != "daily":
-        raise ValueError("FOCUS_VERSION=1.2 only supports FOCUS_DATA_GRANULARITY=daily")
-    return settings
+    match parsed_version:
+        case "1.2":
+            if parsed_granularity != "daily":
+                raise ValueError("FOCUS_VERSION=1.2 only supports FOCUS_DATA_GRANULARITY=daily")
+            return FocusExportSettings(version="1.2", data_granularity="daily")
+        case "1.5":
+            return FocusExportSettings(
+                version="1.5",
+                data_granularity=parsed_granularity,
+                billing=parse_focus_billing_settings(env, hostname=hostname),
+            )
 
 
 def _frequencies_covering_whole_buckets(granularity: FocusDataGranularity) -> tuple[str, ...]:

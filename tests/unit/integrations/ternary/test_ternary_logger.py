@@ -55,6 +55,17 @@ def test_should_preset_focus_config_for_ternary():
     }
 
 
+def test_ignores_focus_env_and_stays_on_1_2(monkeypatch):
+    monkeypatch.setenv("FOCUS_VERSION", "1.5")
+    monkeypatch.setenv("FOCUS_DATA_GRANULARITY", "hourly")
+
+    logger = TernaryLogger(
+        api_key="k", connection_id="c", base_url="http://localhost:8080", frequency="interval", interval_seconds=60
+    )
+
+    assert (logger.settings.version, logger.settings.data_granularity) == ("1.2", "daily")
+
+
 def test_should_read_frequency_from_env(monkeypatch):
     monkeypatch.setenv("TERNARY_API_KEY", "k")
     monkeypatch.setenv("TERNARY_CONNECTION_ID", "c")

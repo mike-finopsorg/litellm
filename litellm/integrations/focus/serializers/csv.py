@@ -7,6 +7,7 @@ from typing import Final
 
 import polars as pl
 
+from ..settings import DEFAULT_FOCUS_VERSION, FocusVersion
 from .base import FocusSerializer
 
 
@@ -15,8 +16,8 @@ class FocusCsvSerializer(FocusSerializer):
 
     extension = "csv"
 
-    def __init__(self, *, positional_floats: bool = False) -> None:
-        self._float_scientific: Final = False if positional_floats else None
+    def __init__(self, *, version: FocusVersion = DEFAULT_FOCUS_VERSION) -> None:
+        self._version: Final = version
 
     def serialize(self, frame: pl.DataFrame) -> bytes:
         """Encode the provided frame as a CSV payload."""
@@ -27,5 +28,9 @@ class FocusCsvSerializer(FocusSerializer):
         if decimal_cols:
             frame = frame.with_columns([pl.col(c).cast(pl.Float64) for c in decimal_cols])
         buffer: Final = io.BytesIO()
-        frame.write_csv(buffer, datetime_format="%Y-%m-%dT%H:%M:%SZ", float_scientific=self._float_scientific)
+        match self._version:
+            case "1.2":
+                frame.write_csv(buffer)
+            case "1.5":
+                frame.write_csv(buffer, datetime_format="%Y-%m-%dT%H:%M:%SZ", float_scientific=False)
         return buffer.getvalue()

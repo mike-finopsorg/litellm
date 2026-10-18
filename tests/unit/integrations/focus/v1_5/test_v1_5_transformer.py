@@ -260,7 +260,7 @@ def test_parquet_stores_charge_periods_as_utc_timestamps() -> None:
 
 
 def test_csv_writes_charge_periods_as_iso_8601_utc() -> None:
-    rows = pl.read_csv(io.BytesIO(FocusCsvSerializer().serialize(_transform(_bucket()))), infer_schema=False)
+    rows = pl.read_csv(io.BytesIO(FocusCsvSerializer(version="1.5").serialize(_transform(_bucket()))), infer_schema=False)
 
     assert rows.select("ChargePeriodStart", "ChargePeriodEnd").row(0) == (
         "2026-05-25T00:00:00Z",

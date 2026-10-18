@@ -87,7 +87,7 @@ class FocusExportEngine:
 
     def _init_serializer(self, settings: FocusExportSettings) -> FocusSerializer:
         if self.export_format == "csv":
-            return FocusCsvSerializer(positional_floats=settings.version == "1.5")
+            return FocusCsvSerializer(version=settings.version)
         if self.export_format == "parquet":
             return FocusParquetSerializer()
         raise NotImplementedError(f"Export format '{self.export_format}' not supported. Use 'parquet' or 'csv'.")

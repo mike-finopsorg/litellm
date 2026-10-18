@@ -120,6 +120,31 @@ def test_region_id_and_name_must_be_set_together(env: dict[str, str]) -> None:
         parse_focus_billing_settings(env, hostname="spark")
 
 
+def test_1_2_ignores_1_5_billing_env() -> None:
+    settings = parse_focus_export_settings(
+        version="1.2",
+        data_granularity=None,
+        env={"FOCUS_REGION_ID": "us-east", "FOCUS_INCLUDE_SPEND": "bogus", "FOCUS_BILLING_ID": "acct"},
+        hostname="spark",
+    )
+
+    assert settings.version == "1.2"
+    assert settings.billing.billing_account_id != "acct"
+
+
+def test_1_5_reads_billing_env() -> None:
+    settings = parse_focus_export_settings(
+        version="1.5", data_granularity=None, env={"FOCUS_BILLING_ID": "acct"}, hostname="spark"
+    )
+
+    assert settings.billing.billing_account_id == "acct"
+
+
+def test_1_5_rejects_invalid_billing_env() -> None:
+    with pytest.raises(ValueError, match="FOCUS_REGION_ID and FOCUS_REGION_NAME must be set together"):
+        parse_focus_export_settings(version="1.5", data_granularity=None, env={"FOCUS_REGION_ID": "us-east"})
+
+
 def test_1_5_accepts_hourly_granularity() -> None:
     settings = parse_focus_export_settings(version="1.5", data_granularity="hourly")
 

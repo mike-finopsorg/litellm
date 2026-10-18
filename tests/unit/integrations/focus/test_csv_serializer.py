@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import polars as pl
@@ -10,9 +12,7 @@ from litellm.integrations.focus.serializers.csv import FocusCsvSerializer
 
 
 def test_should_serialize_dataframe_to_csv():
-    frame = pl.DataFrame(
-        {"BilledCost": [1.5, 2.0], "ServiceName": ["openai", "anthropic"]}
-    )
+    frame = pl.DataFrame({"BilledCost": [1.5, 2.0], "ServiceName": ["openai", "anthropic"]})
     serializer = FocusCsvSerializer()
     result = serializer.serialize(frame)
 
@@ -33,9 +33,9 @@ def test_should_return_header_only_for_empty_frame():
 
 
 def test_should_cast_decimal_columns_to_float():
-    frame = pl.DataFrame(
-        {"BilledCost": [1, 2], "ServiceName": ["openai", "anthropic"]}
-    ).cast({"BilledCost": pl.Decimal(18, 6)})
+    frame = pl.DataFrame({"BilledCost": [1, 2], "ServiceName": ["openai", "anthropic"]}).cast(
+        {"BilledCost": pl.Decimal(18, 6)}
+    )
     serializer = FocusCsvSerializer()
     result = serializer.serialize(frame)
 
@@ -56,8 +56,8 @@ def _tiny_cost_frame() -> pl.DataFrame:
     )
 
 
-def test_positional_floats_never_use_scientific_notation():
-    result = FocusCsvSerializer(positional_floats=True).serialize(_tiny_cost_frame())
+def test_1_5_floats_never_use_scientific_notation():
+    result = FocusCsvSerializer(version="1.5").serialize(_tiny_cost_frame())
 
     assert result.decode().splitlines() == ["BilledCost", "0.0000001234"]
 
@@ -66,3 +66,26 @@ def test_default_float_formatting_is_unchanged():
     result = FocusCsvSerializer().serialize(_tiny_cost_frame())
 
     assert result.decode().splitlines() == ["BilledCost", "1.234e-7"]
+
+
+def _timestamp_and_float_frame() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "ChargePeriodStart": [datetime(2026, 1, 1, 5, tzinfo=timezone.utc)],
+            "BilledCost": [0.0000001234],
+        }
+    )
+
+
+def test_1_2_output_matches_plain_polars_csv():
+    frame = _timestamp_and_float_frame()
+    buffer = io.BytesIO()
+    frame.write_csv(buffer)
+
+    assert FocusCsvSerializer(version="1.2").serialize(frame) == buffer.getvalue()
+
+
+def test_1_5_writes_utc_second_precision_timestamps():
+    result = FocusCsvSerializer(version="1.5").serialize(_timestamp_and_float_frame())
+
+    assert result.decode().splitlines()[1].startswith("2026-01-01T05:00:00Z,")
