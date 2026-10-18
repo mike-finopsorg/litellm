@@ -148,6 +148,7 @@ def _requester_details(row: Mapping[str, str | None]) -> str | None:
 
 
 _USER_AGENT_TAG_PREFIX: Final = "User-Agent: "
+_LITELLM_TAG_PREFIX: Final = "litellm/"
 
 
 def _tags(row: Mapping[str, str | None]) -> str | None:
@@ -157,9 +158,11 @@ def _tags(row: Mapping[str, str | None]) -> str | None:
     user_agents: Final = tuple(
         tag.removeprefix(_USER_AGENT_TAG_PREFIX) for tag in request_tags if tag.startswith(_USER_AGENT_TAG_PREFIX)
     )
-    user_tags: Final = tuple((tag, True) for tag in request_tags if not tag.startswith(_USER_AGENT_TAG_PREFIX))
+    user_tags: Final = tuple(
+        (tag, True) for tag in request_tags if not tag.startswith((_USER_AGENT_TAG_PREFIX, _LITELLM_TAG_PREFIX))
+    )
     litellm_tags: Final = tuple(
-        (f"litellm/{name}", value)
+        (f"{_LITELLM_TAG_PREFIX}{name}", value)
         for name, value in (
             ("team_id", row["team_id"]),
             ("team_alias", row["team_alias"]),
@@ -167,7 +170,7 @@ def _tags(row: Mapping[str, str | None]) -> str | None:
         )
         if value is not None
     )
-    tags: Final = MappingProxyType({key: value for key, value in sorted(user_tags + litellm_tags)})
+    tags: Final = MappingProxyType(dict(sorted(user_tags + litellm_tags, key=lambda pair: pair[0])))
     return _TAGS_ADAPTER.dump_json(_TAGS_ADAPTER.validate_python(tags)).decode() if tags else None
 
 

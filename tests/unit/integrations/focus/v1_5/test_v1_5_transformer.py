@@ -359,3 +359,9 @@ def test_user_agent_without_a_product_version_is_kept_as_is() -> None:
     row = _row(request_tags='["User-Agent: curl"]', team_id=None, team_alias=None)
 
     assert json.loads(row["Tags"]) == {"litellm/user_agent": "curl"}
+
+
+def test_user_tags_with_the_reserved_litellm_prefix_are_dropped() -> None:
+    row = _row(request_tags='["litellm/team_id", "litellm/env", "prod"]')
+
+    assert json.loads(row["Tags"]) == {"litellm/team_alias": "Agents", "litellm/team_id": "team-1", "prod": True}
