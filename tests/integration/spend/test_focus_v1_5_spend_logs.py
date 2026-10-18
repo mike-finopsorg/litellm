@@ -48,6 +48,8 @@ SPLIT_MODEL: Final = f"split-model-{RUN}"
 LOCAL_DEPLOYMENT: Final = f"local-{RUN}"
 VENDOR_DEPLOYMENT: Final = f"vendor-{RUN}"
 RAW_KEY_MODEL: Final = f"raw-key-model-{RUN}"
+NO_ORIGINAL_COST_MODEL: Final = f"no-original-cost-model-{RUN}"
+ZERO_QUANTITY_MODEL: Final = f"zero-quantity-model-{RUN}"
 BILLING: Final = FocusBillingSettings(
     include_spend=True,
     billing_account_id="billing-1",
@@ -276,6 +278,26 @@ async def seeded(db):
         metadata=_plain(2.0),
         model_id=VENDOR_DEPLOYMENT,
     )
+    await _spend_log(
+        db,
+        model=NO_ORIGINAL_COST_MODEL,
+        spend=0.2,
+        prompt_tokens=1,
+        completion_tokens=1,
+        metadata={
+            "user_api_key_alias": None,
+            "usage_object": {},
+            "cost_breakdown": {"input_cost": 0.05, "output_cost": 0.15, "total_cost": 0.2, "service_tier": "default"},
+        },
+    )
+    await _spend_log(
+        db,
+        model=ZERO_QUANTITY_MODEL,
+        spend=0.01,
+        prompt_tokens=0,
+        completion_tokens=0,
+        metadata=_metadata(input_cost=0.01, output_cost=0.0),
+    )
     payload_user, payload_api_key = _payload_for_raw_key()
     await _spend_log(
         db,
@@ -387,7 +409,7 @@ async def test_billed_cost_reconciles_to_spend_for_every_model(db):
     assert (
         abs(
             float(rows["BilledCost"].sum())
-            - (0.4 + 0.8 + 1.6 + 3.2 + 0.0038 + 0.0099 + 0.5 + 0.03 + 0.012 + 4.0 + 0.3 + 0.32 + 3.0)
+            - (0.4 + 0.8 + 1.6 + 3.2 + 0.0038 + 0.0099 + 0.5 + 0.03 + 0.012 + 4.0 + 0.3 + 0.32 + 3.0 + 0.2 + 0.01)
         )
         < 1e-9
     )
@@ -467,3 +489,18 @@ async def test_hourly_granularity_splits_a_day_into_hour_buckets(db):
         (DAY, DAY.replace(hour=1), 0.3),
         (DAY.replace(hour=23), NEXT_DAY, 0.6),
     ]
+
+
+async def test_breakdown_without_original_cost_still_splits_spend_by_list_cost(db):
+    meters: Final = _by_meter(await _export(db), NO_ORIGINAL_COST_MODEL)
+
+    assert set(meters) == {"Input Tokens", "Output Tokens"}
+    assert _close(meters["Input Tokens"], (1, 0.05, 0.05, 0.05))
+    assert _close(meters["Output Tokens"], (1, 0.15, 0.15, 0.15))
+
+
+async def test_cost_without_a_quantity_moves_to_other_usage(db):
+    meters: Final = _by_meter(await _export(db), ZERO_QUANTITY_MODEL)
+
+    assert set(meters) == {"Other Usage"}
+    assert _close(meters["Other Usage"], (1, 0.01, 0.01, 0.01))

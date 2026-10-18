@@ -72,7 +72,7 @@ async def test_rejects_negative_limit_before_querying() -> None:
     db = _RecordingDb([])
 
     with pytest.raises(ValueError, match="non-negative"):
-        await _database(db).get_usage_data(limit=-1)
+        await _database(db).get_usage_data(limit=-1, start_time_utc=START, end_time_utc=END)
     assert db.calls == []
 
 
@@ -81,7 +81,7 @@ async def test_rejects_rows_that_do_not_match_the_bucket_shape() -> None:
     db = _RecordingDb([{**BUCKET, "meter": "Reasoning Tokens"}])
 
     with pytest.raises(pydantic.ValidationError):
-        await _database(db).get_usage_data()
+        await _database(db).get_usage_data(start_time_utc=START, end_time_utc=END)
 
 
 @pytest.mark.asyncio
@@ -92,3 +92,13 @@ async def test_hourly_granularity_buckets_by_hour() -> None:
     await database.get_usage_data(start_time_utc=START, end_time_utc=END)
 
     assert db.calls == [(SPEND_LOG_BUCKETS_SQL, ("hour", START, END, None))]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bounds", ({}, {"start_time_utc": START}, {"end_time_utc": END}))
+async def test_requires_both_window_bounds(bounds: dict[str, datetime]) -> None:
+    db = _RecordingDb([])
+
+    with pytest.raises(ValueError, match="time window"):
+        await _database(db).get_usage_data(**bounds)
+    assert db.calls == []

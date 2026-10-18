@@ -45,49 +45,69 @@ WITH logs AS (
         COALESCE((sl.metadata->'cost_breakdown'->>'cache_read_cost')::float8, 0) AS cache_read_cost,
         COALESCE((sl.metadata->'cost_breakdown'->>'cache_creation_cost')::float8, 0) AS cache_creation_cost,
         COALESCE((sl.metadata->'cost_breakdown'->>'output_cost')::float8, 0) AS output_cost,
-        COALESCE((sl.metadata->'cost_breakdown'->>'original_cost')::float8, 0) AS original_cost,
+        COALESCE(
+            NULLIF((sl.metadata->'cost_breakdown'->>'original_cost')::float8, 0),
+            (sl.metadata->'cost_breakdown'->>'total_cost')::float8,
+            0
+        ) AS original_cost,
         COALESCE((sl.metadata->'cost_breakdown'->>'discount_percent')::float8, 0) AS discount_percent
     FROM "LiteLLM_SpendLogs" sl
-    WHERE ($2::timestamptz IS NULL OR sl."startTime" >= ($2::timestamptz AT TIME ZONE 'UTC'))
-      AND ($3::timestamptz IS NULL OR sl."startTime" < ($3::timestamptz AT TIME ZONE 'UTC'))
+    WHERE sl."startTime" >= ($2::timestamptz AT TIME ZONE 'UTC')
+      AND sl."startTime" < ($3::timestamptz AT TIME ZONE 'UTC')
+),
+priced AS (
+    SELECT
+        logs.*,
+        GREATEST(logs.prompt_tokens - logs.cached_tokens - logs.cache_write_tokens, 0) AS input_tokens,
+        CASE
+            WHEN logs.prompt_tokens - logs.cached_tokens - logs.cache_write_tokens > 0
+                THEN logs.input_cost - logs.cache_read_cost - logs.cache_creation_cost
+            ELSE 0
+        END AS input_list,
+        CASE WHEN logs.cached_tokens > 0 THEN logs.cache_read_cost ELSE 0 END AS cached_list,
+        CASE WHEN logs.cache_write_tokens > 0 THEN logs.cache_creation_cost ELSE 0 END AS cache_write_list,
+        CASE WHEN logs.completion_tokens > 0 THEN logs.output_cost ELSE 0 END AS output_list
+    FROM logs
+),
+totals AS (
+    SELECT
+        priced.*,
+        priced.input_list + priced.cached_list + priced.cache_write_list + priced.output_list AS token_list
+    FROM priced
 ),
 skus AS (
     SELECT
-        logs.*,
+        totals.*,
         sku.meter,
         sku.quantity,
         sku.list_cost,
         CASE
-            WHEN sku.meter = 'Other Usage' AND logs.original_cost = 0 THEN logs.spend
-            WHEN sku.meter = 'Other Usage'
-                THEN logs.spend - (logs.input_cost + logs.output_cost) * logs.spend / logs.original_cost
-            WHEN logs.original_cost = 0 THEN 0
-            ELSE sku.list_cost * logs.spend / logs.original_cost
+            WHEN sku.meter = 'Other Usage' AND totals.original_cost = 0 THEN totals.spend
+            WHEN sku.meter = 'Other Usage' THEN totals.spend - totals.token_list * totals.spend / totals.original_cost
+            WHEN totals.original_cost = 0 THEN 0
+            ELSE sku.list_cost * totals.spend / totals.original_cost
         END AS billed_cost
-    FROM logs
+    FROM totals
     CROSS JOIN LATERAL (
         VALUES
-            (
-                'Input Tokens',
-                GREATEST(logs.prompt_tokens - logs.cached_tokens - logs.cache_write_tokens, 0),
-                logs.input_cost - logs.cache_read_cost - logs.cache_creation_cost
-            ),
-            ('Cached Input Tokens', logs.cached_tokens, logs.cache_read_cost),
-            ('Cache Write Tokens', logs.cache_write_tokens, logs.cache_creation_cost),
-            ('Output Tokens', logs.completion_tokens, logs.output_cost),
+            ('Input Tokens', totals.input_tokens, totals.input_list),
+            ('Cached Input Tokens', totals.cached_tokens, totals.cached_list),
+            ('Cache Write Tokens', totals.cache_write_tokens, totals.cache_write_list),
+            ('Output Tokens', totals.completion_tokens, totals.output_list),
             (
                 'Other Usage',
                 1::bigint,
                 CASE
-                    WHEN logs.has_cost_breakdown THEN logs.original_cost - logs.input_cost - logs.output_cost
-                    ELSE logs.spend
+                    WHEN totals.has_cost_breakdown THEN totals.original_cost - totals.token_list
+                    ELSE totals.spend
                 END
             )
     ) AS sku(meter, quantity, list_cost)
 ),
 usage_rows AS (
     SELECT * FROM skus
-    WHERE (meter <> 'Other Usage' AND quantity <> 0) OR abs(list_cost) > 1e-12 OR abs(billed_cost) > 1e-12
+    WHERE (meter <> 'Other Usage' AND quantity > 0)
+       OR (meter = 'Other Usage' AND (abs(list_cost) > 1e-12 OR abs(billed_cost) > 1e-12))
 )
 SELECT
     to_char(u.bucket_start, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS charge_period_start,
@@ -116,7 +136,8 @@ GROUP BY
     u.bucket_start, u.principal_id, ut.user_alias, ut.user_email, u.credential_id, u.credential_name, u.model,
     u.model_id, u.model_group, u.custom_llm_provider, u.team_id, u.team_alias, u.service_tier, u.request_tags, u.meter
 ORDER BY
-    u.bucket_start, u.principal_id, u.credential_id, u.model, u.model_id, u.custom_llm_provider, u.team_id, u.meter
+    u.bucket_start, u.principal_id, ut.user_alias, ut.user_email, u.credential_id, u.credential_name, u.model,
+    u.model_id, u.model_group, u.custom_llm_provider, u.team_id, u.team_alias, u.service_tier, u.request_tags, u.meter
 LIMIT $4
 """
 
@@ -228,9 +249,11 @@ class FocusSpendLogsDatabase:
         start_time_utc: datetime | None = None,
         end_time_utc: datetime | None = None,
     ) -> pl.DataFrame:
-        """Return one row per bucket in [start_time_utc, end_time_utc); an unset bound is unbounded."""
+        """Return one row per bucket in [start_time_utc, end_time_utc); both bounds are required."""
         if self._spend_logs_disabled():
             raise RuntimeError("FOCUS 1.5 export reads LiteLLM_SpendLogs, but disable_spend_logs is enabled")
+        if start_time_utc is None or end_time_utc is None:
+            raise ValueError("FOCUS 1.5 export needs a time window: pass start_time_utc and end_time_utc")
         if limit is not None and limit < 0:
             raise ValueError("limit must be non-negative")
         rows: Final = await self._resolve_db().query_raw(
