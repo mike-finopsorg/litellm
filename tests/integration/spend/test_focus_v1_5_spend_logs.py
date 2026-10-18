@@ -6,8 +6,8 @@ so these tests are the ones that exercise them
 
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Final

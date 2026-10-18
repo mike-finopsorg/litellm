@@ -13725,17 +13725,10 @@
           "additionalProperties": false,
           "properties": {
             "end_time_utc": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Exclusive end of the preview window (UTC)",
-              "title": "End Time Utc"
+              "description": "Exclusive end of the range in UTC; a value without an offset is read as UTC",
+              "format": "date-time",
+              "title": "End Time Utc",
+              "type": "string"
             },
             "limit": {
               "default": 500,
@@ -13746,19 +13739,16 @@
               "type": "integer"
             },
             "start_time_utc": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Inclusive start of the preview window (UTC)",
-              "title": "Start Time Utc"
+              "description": "Inclusive start of the range in UTC; a value without an offset is read as UTC",
+              "format": "date-time",
+              "title": "Start Time Utc",
+              "type": "string"
             }
           },
+          "required": [
+            "start_time_utc",
+            "end_time_utc"
+          ],
           "title": "FocusDryRunRequest",
           "type": "object"
         },
@@ -13847,13 +13837,13 @@
           "additionalProperties": false,
           "properties": {
             "end_time_utc": {
-              "description": "Exclusive end of the export range (UTC)",
+              "description": "Exclusive end of the range in UTC; a value without an offset is read as UTC",
               "format": "date-time",
               "title": "End Time Utc",
               "type": "string"
             },
             "start_time_utc": {
-              "description": "Inclusive start of the export range (UTC)",
+              "description": "Inclusive start of the range in UTC; a value without an offset is read as UTC",
               "format": "date-time",
               "title": "Start Time Utc",
               "type": "string"
@@ -13970,7 +13960,7 @@
     "paths": {
       "/focus/dry-run": {
         "post": {
-          "description": "Return the FOCUS rows an export of the window would upload, without uploading them. Totals cover every row\nin the window and ``limit`` caps the rows returned. The window is widened to whole buckets the same way\n/focus/export widens it. Only proxy admins can call it.",
+          "description": "Return the FOCUS rows an export of [start_time_utc, end_time_utc) would upload, without uploading them. Totals\ncover every row in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the\nsame way /focus/export widens it. Only proxy admins can call it.",
           "operationId": "focus_dry_run_focus_dry_run_post",
           "requestBody": {
             "content": {
@@ -14017,7 +14007,7 @@
       },
       "/focus/export": {
         "post": {
-          "description": "Export [start_time_utc, end_time_utc) to the configured destination, one file per scheduled window, e.g. to\nbackfill history. The range is widened to whole buckets and stops before the bucket still in progress, so\nre-running a range overwrites the same files. Only proxy admins can call it.",
+          "description": "Export [start_time_utc, end_time_utc) to the configured destination, one file per scheduled window, e.g. to\nbackfill history. The range is widened to whole buckets and stops before the bucket still in progress, so\nre-running a range overwrites the same files. With FOCUS_VERSION=1.2 the range selects daily rollups by their\nlast update time rather than by usage date. Only proxy admins can call it.",
           "operationId": "focus_export_focus_export_post",
           "requestBody": {
             "content": {

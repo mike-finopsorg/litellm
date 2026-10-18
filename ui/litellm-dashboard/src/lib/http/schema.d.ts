@@ -5674,9 +5674,9 @@ export interface paths {
         put?: never;
         /**
          * Focus Dry Run
-         * @description Return the FOCUS rows an export of the window would upload, without uploading them. Totals cover every row
-         *     in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the same way
-         *     /focus/export widens it. Only proxy admins can call it.
+         * @description Return the FOCUS rows an export of [start_time_utc, end_time_utc) would upload, without uploading them. Totals
+         *     cover every row in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the
+         *     same way /focus/export widens it. Only proxy admins can call it.
          */
         post: operations["focus_dry_run_focus_dry_run_post"];
         delete?: never;
@@ -5698,7 +5698,8 @@ export interface paths {
          * Focus Export
          * @description Export [start_time_utc, end_time_utc) to the configured destination, one file per scheduled window, e.g. to
          *     backfill history. The range is widened to whole buckets and stops before the bucket still in progress, so
-         *     re-running a range overwrites the same files. Only proxy admins can call it.
+         *     re-running a range overwrites the same files. With FOCUS_VERSION=1.2 the range selects daily rollups by their
+         *     last update time rather than by usage date. Only proxy admins can call it.
          */
         post: operations["focus_export_focus_export_post"];
         delete?: never;
@@ -32384,9 +32385,10 @@ export interface components {
         FocusDryRunRequest: {
             /**
              * End Time Utc
-             * @description Exclusive end of the preview window (UTC)
+             * Format: date-time
+             * @description Exclusive end of the range in UTC; a value without an offset is read as UTC
              */
-            end_time_utc?: string | null;
+            end_time_utc: string;
             /**
              * Limit
              * @description Maximum number of FOCUS rows to return; totals cover all rows
@@ -32395,9 +32397,10 @@ export interface components {
             limit: number;
             /**
              * Start Time Utc
-             * @description Inclusive start of the preview window (UTC)
+             * Format: date-time
+             * @description Inclusive start of the range in UTC; a value without an offset is read as UTC
              */
-            start_time_utc?: string | null;
+            start_time_utc: string;
         };
         /** FocusDryRunResponse */
         FocusDryRunResponse: {
@@ -32426,13 +32429,13 @@ export interface components {
             /**
              * End Time Utc
              * Format: date-time
-             * @description Exclusive end of the export range (UTC)
+             * @description Exclusive end of the range in UTC; a value without an offset is read as UTC
              */
             end_time_utc: string;
             /**
              * Start Time Utc
              * Format: date-time
-             * @description Inclusive start of the export range (UTC)
+             * @description Inclusive start of the range in UTC; a value without an offset is read as UTC
              */
             start_time_utc: string;
         };
