@@ -136,11 +136,18 @@ def test_invalid_env_value_fails_at_construction(monkeypatch: pytest.MonkeyPatch
         FocusLogger()
 
 
-def test_1_5_with_the_default_hourly_frequency_fails_at_construction(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("granularity", "frequency"), (("daily", "daily"), ("hourly", "hourly")))
+def test_1_5_defaults_the_frequency_to_one_bucket_per_file(
+    monkeypatch: pytest.MonkeyPatch, granularity: str, frequency: str
+) -> None:
     monkeypatch.delenv("FOCUS_FREQUENCY", raising=False)
 
+    assert FocusLogger(focus_version="1.5", data_granularity=granularity).frequency == frequency
+
+
+def test_1_5_still_rejects_an_explicit_frequency_that_splits_a_bucket() -> None:
     with pytest.raises(ValueError, match="FOCUS_FREQUENCY=daily"):
-        FocusLogger(focus_version="1.5")
+        FocusLogger(focus_version="1.5", frequency="hourly")
 
 
 def test_1_5_engine_reads_spend_logs_and_emits_the_1_5_schema() -> None:

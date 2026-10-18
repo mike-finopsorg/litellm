@@ -5,6 +5,7 @@ import pytest
 from litellm.integrations.focus.settings import (
     FocusBillingSettings,
     FocusExportSettings,
+    default_export_frequency,
     parse_focus_billing_settings,
     parse_focus_export_settings,
     validate_export_frequency,
@@ -166,3 +167,17 @@ def test_1_5_hourly_rejects_interval_frequency() -> None:
 
     with pytest.raises(ValueError, match="FOCUS_FREQUENCY=hourly or daily"):
         validate_export_frequency(settings, "interval")
+
+
+@pytest.mark.parametrize(
+    ("settings", "frequency"),
+    (
+        (FocusExportSettings(version="1.2", data_granularity="daily"), "hourly"),
+        (FocusExportSettings(version="1.5", data_granularity="daily"), "daily"),
+        (FocusExportSettings(version="1.5", data_granularity="hourly"), "hourly"),
+    ),
+)
+def test_default_frequency_keeps_1_2_hourly_and_gives_1_5_one_bucket_per_file(
+    settings: FocusExportSettings, frequency: str
+) -> None:
+    assert default_export_frequency(settings) == frequency

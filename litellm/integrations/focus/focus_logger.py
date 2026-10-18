@@ -11,7 +11,7 @@ from litellm._logging import verbose_logger
 from litellm.integrations.custom_logger import CustomLogger
 
 from .destinations import FocusTimeWindow
-from .settings import parse_focus_export_settings, validate_export_frequency
+from .settings import default_export_frequency, parse_focus_export_settings, validate_export_frequency
 
 if TYPE_CHECKING:
     import polars as pl
@@ -95,7 +95,7 @@ class FocusLogger(CustomLogger):
         )
         self.provider = (provider or os.getenv("FOCUS_PROVIDER") or "s3").lower()
         self.export_format = (export_format or os.getenv("FOCUS_FORMAT") or "parquet").lower()
-        self.frequency = (frequency or os.getenv("FOCUS_FREQUENCY") or "hourly").lower()
+        self.frequency = (frequency or os.getenv("FOCUS_FREQUENCY") or default_export_frequency(self.settings)).lower()
         validate_export_frequency(self.settings, self.frequency)
         self.cron_offset_minute = (
             cron_offset_minute if cron_offset_minute is not None else int(os.getenv("FOCUS_CRON_OFFSET", "5"))

@@ -137,6 +137,15 @@ def _frequencies_covering_whole_buckets(granularity: FocusDataGranularity) -> tu
             return ("hourly", "daily")
 
 
+def default_export_frequency(settings: FocusExportSettings) -> str:
+    """The FOCUS_FREQUENCY used when none is configured: hourly on 1.2, one charge period per file on 1.5."""
+    match settings.version:
+        case "1.2":
+            return "hourly"
+        case "1.5":
+            return settings.data_granularity
+
+
 def validate_export_frequency(settings: FocusExportSettings, frequency: str) -> None:
     """Require 1.5 exports to cover whole charge periods so no bucket is split across files."""
     if settings.version != "1.5":
@@ -157,6 +166,7 @@ __all__ = (
     "FocusExportSettings",
     "FocusVersion",
     "default_account_label",
+    "default_export_frequency",
     "parse_focus_billing_settings",
     "parse_focus_export_settings",
     "validate_export_frequency",
