@@ -51,7 +51,7 @@ RAW_KEY_MODEL: Final = f"raw-key-model-{RUN}"
 NO_ORIGINAL_COST_MODEL: Final = f"no-original-cost-model-{RUN}"
 ZERO_QUANTITY_MODEL: Final = f"zero-quantity-model-{RUN}"
 BILLING: Final = FocusBillingSettings(
-    include_spend=True,
+    billed_by="operator",
     billing_account_id="billing-1",
     billing_account_name="Example AI Platform",
     sub_account_id="account-1",
@@ -370,7 +370,7 @@ async def test_rows_carry_the_utc_day_and_month_as_charge_and_billing_periods(db
 async def test_cached_input_is_split_from_uncached_input(db):
     meters: Final = _by_meter(await _export(db), CACHED_MODEL)
 
-    assert set(meters) == {"Input Tokens", "Cached Input Tokens", "Output Tokens"}
+    assert set(meters) == {"Input Tokens", "Cached Input Tokens", "Output Tokens", "Requests"}
     assert _close(meters["Input Tokens"], (465, 0.0003492, 0.0003492, 0.0003492 * 0.0038 / 0.001401))
     assert _close(meters["Cached Input Tokens"], (3584, 0.0002688, 0.0002688, 0.0002688 * 0.0038 / 0.001401))
     assert _close(meters["Output Tokens"], (174, 0.000783, 0.000783, 0.000783 * 0.0038 / 0.001401))
@@ -415,8 +415,17 @@ async def test_billed_cost_reconciles_to_spend_for_every_model(db):
     )
 
 
-async def test_requests_without_usage_produce_no_rows(db):
-    assert (await _export(db)).filter(_model(FAILED_MODEL)).height == 0
+async def test_requests_without_usage_still_count_as_a_request(db):
+    meters: Final = _by_meter(await _export(db), FAILED_MODEL)
+
+    assert set(meters) == {"Requests"}
+    assert _close(meters["Requests"], (1, 0, 0, 0))
+
+
+async def test_every_request_in_the_window_is_counted_once(db):
+    rows: Final = (await _export(db)).filter(pl.col("SkuMeter") == "Requests")
+
+    assert int(rows["PricingQuantity"].sum()) == 18
 
 
 async def test_principal_details_come_from_the_user_table(db):
@@ -466,7 +475,7 @@ async def test_each_deployment_of_a_model_is_its_own_resource(db):
 async def test_deployment_overrides_apply_to_that_deployment_only(db):
     overrides: Final = {
         LOCAL_DEPLOYMENT: FocusDeploymentOverrides(region_id="on-prem", region_name="Home Lab"),
-        VENDOR_DEPLOYMENT: FocusDeploymentOverrides(include_spend=False),
+        VENDOR_DEPLOYMENT: FocusDeploymentOverrides(billed_by="vendor"),
     }
     rows: Final = (await _export(db, overrides=overrides)).filter(
         _model(SPLIT_MODEL) & (pl.col("SkuMeter") == "Output Tokens")
@@ -494,7 +503,7 @@ async def test_hourly_granularity_splits_a_day_into_hour_buckets(db):
 async def test_breakdown_without_original_cost_still_splits_spend_by_list_cost(db):
     meters: Final = _by_meter(await _export(db), NO_ORIGINAL_COST_MODEL)
 
-    assert set(meters) == {"Input Tokens", "Output Tokens"}
+    assert set(meters) == {"Input Tokens", "Output Tokens", "Requests"}
     assert _close(meters["Input Tokens"], (1, 0.05, 0.05, 0.05))
     assert _close(meters["Output Tokens"], (1, 0.15, 0.15, 0.15))
 
@@ -502,5 +511,5 @@ async def test_breakdown_without_original_cost_still_splits_spend_by_list_cost(d
 async def test_cost_without_a_quantity_moves_to_other_usage(db):
     meters: Final = _by_meter(await _export(db), ZERO_QUANTITY_MODEL)
 
-    assert set(meters) == {"Other Usage"}
+    assert set(meters) == {"Other Usage", "Requests"}
     assert _close(meters["Other Usage"], (1, 0.01, 0.01, 0.01))
