@@ -13,7 +13,7 @@ from typing_extensions import ReadOnly, TypedDict
 import litellm
 from litellm._logging import verbose_proxy_logger
 from litellm.integrations.focus.destinations.base import FocusTimeWindow
-from litellm.integrations.focus.focus_logger import FocusLogger, aligned_windows
+from litellm.integrations.focus.focus_logger import FocusLogger, aligned_windows, last_closed_window
 from litellm.integrations.focus.settings import FocusExportSettings
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
@@ -110,19 +110,28 @@ async def focus_dry_run(
 ) -> FocusDryRunResponse:
     """Return the FOCUS rows an export of [start_time_utc, end_time_utc) would upload, without uploading them. Totals
     cover every row in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the
-    same way /focus/export widens it. Only proxy admins can call it."""
+    same way /focus/export widens it, and defaults to the last closed scheduler window. Only proxy admins can call
+    it."""
+    now: Final = datetime.now(timezone.utc)
     try:
+        requested: Final = (
+            FocusTimeWindow(
+                start_time=request.start_time_utc, end_time=request.end_time_utc, frequency=target.frequency
+            )
+            if request.start_time_utc is not None and request.end_time_utc is not None
+            else last_closed_window(frequency=target.frequency, now=now)
+        )
         windows: Final = aligned_windows(
-            start_time_utc=request.start_time_utc,
-            end_time_utc=request.end_time_utc,
+            start_time_utc=requested.start_time,
+            end_time_utc=requested.end_time,
             frequency=target.frequency,
-            now=datetime.now(timezone.utc),
+            now=now,
         )
         window: Final = _window(windows)
         frame: Final = await target.preview(
             limit=None,
-            start_time_utc=window.start_time_utc if window is not None else request.start_time_utc,
-            end_time_utc=window.end_time_utc if window is not None else request.end_time_utc,
+            start_time_utc=window.start_time_utc if window is not None else requested.start_time,
+            end_time_utc=window.end_time_utc if window is not None else requested.end_time,
         )
     except ValueError as exc:
         raise _http_error(400, str(exc)) from exc

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import polars as pl
@@ -129,8 +129,22 @@ def test_dry_run_totals_cover_every_row_while_limit_caps_the_rows_returned(targe
     )
 
 
-def test_dry_run_requires_a_window(target: _Target) -> None:
+def test_dry_run_defaults_to_the_last_closed_daily_window(target: _Target) -> None:
     response = _client(target).post("/focus/dry-run", json={"limit": 10})
+
+    assert response.status_code == 200
+    ((_, start, end),) = target.previews
+    assert start is not None and end is not None
+    assert (end - start, end.tzinfo is not None, end <= datetime.now(timezone.utc)) == (timedelta(days=1), True, True)
+    assert response.json()["window"] == {
+        "start_time_utc": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "end_time_utc": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+@pytest.mark.parametrize("body", ({"start_time_utc": "2026-09-30T00:00:00Z"}, {"end_time_utc": "2026-10-01T00:00:00Z"}))
+def test_dry_run_rejects_a_single_bound(target: _Target, body: dict[str, str]) -> None:
+    response = _client(target).post("/focus/dry-run", json=body)
 
     assert (response.status_code, target.previews) == (422, [])
 
