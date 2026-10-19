@@ -9,14 +9,14 @@ from typing import Final, Protocol
 from pydantic import BaseModel, ConfigDict, model_validator
 from typing_extensions import Self
 
-from ..settings import FocusBillingSettings
+from ..settings import BilledBy, FocusBillingSettings
 from .providers import provider_entities
 
 
 class FocusDeploymentOverrides(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    include_spend: bool | None = None
+    billed_by: BilledBy | None = None
     billing_account_id: str | None = None
     billing_account_name: str | None = None
     sub_account_id: str | None = None
@@ -43,7 +43,7 @@ class ResolveDeploymentOverrides(Protocol):
 class ResolvedColumns:
     """The FOCUS 1.5 column values that come from configuration rather than SpendLogs."""
 
-    include_spend: bool
+    billed_by: BilledBy
     billing_account_id: str
     billing_account_name: str
     sub_account_id: str
@@ -59,15 +59,15 @@ class ResolvedColumns:
 def resolve_columns(
     billing: FocusBillingSettings, overrides: FocusDeploymentOverrides | None, provider: str | None
 ) -> ResolvedColumns:
-    """Apply deployment overrides over FOCUS_* env settings, deriving provider names from the provider slug."""
+    """Apply deployment overrides over the callback_settings.focus block, deriving provider names from the slug."""
     chosen: Final = overrides or FocusDeploymentOverrides()
     billing_account_name: Final = chosen.billing_account_name or billing.billing_account_name
     entities: Final = provider_entities(provider, operator_name=billing_account_name)
-    include_spend: Final = billing.include_spend if chosen.include_spend is None else chosen.include_spend
+    billed_by: Final = chosen.billed_by or billing.billed_by
     service_provider_name: Final = chosen.service_provider_name or entities.service_provider_name
     region_overridden: Final = chosen.region_id is not None
     return ResolvedColumns(
-        include_spend=include_spend,
+        billed_by=billed_by,
         billing_account_id=chosen.billing_account_id or billing.billing_account_id,
         billing_account_name=billing_account_name,
         sub_account_id=chosen.sub_account_id or billing.sub_account_id,
@@ -78,7 +78,8 @@ def resolve_columns(
         host_provider_name=chosen.host_provider_name or entities.host_provider_name,
         service_name=chosen.service_name or entities.service_name,
         invoice_issuer_name=chosen.invoice_issuer_name
-        or (billing_account_name if include_spend else service_provider_name),
+        or billing.invoice_issuer_name
+        or (billing_account_name if billed_by == "operator" else service_provider_name),
     )
 
 

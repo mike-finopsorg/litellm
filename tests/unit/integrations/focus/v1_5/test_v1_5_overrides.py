@@ -16,7 +16,7 @@ from litellm.integrations.focus.v1_5.overrides import (
 )
 
 BILLING = FocusBillingSettings(
-    include_spend=True,
+    billed_by="operator",
     billing_account_id="billing-1",
     billing_account_name="Example AI Platform",
     sub_account_id="account-1",
@@ -49,7 +49,7 @@ class _Router:
 
 def test_env_settings_and_provider_names_apply_without_overrides() -> None:
     assert resolve_columns(BILLING, None, "openai") == ResolvedColumns(
-        include_spend=True,
+        billed_by="operator",
         billing_account_id="billing-1",
         billing_account_name="Example AI Platform",
         sub_account_id="account-1",
@@ -69,10 +69,10 @@ def test_region_override_replaces_both_region_columns() -> None:
     assert (resolved.region_id, resolved.region_name) == ("us", "US")
 
 
-def test_observer_mode_names_the_service_provider_as_invoice_issuer() -> None:
-    resolved = resolve_columns(BILLING, FocusDeploymentOverrides(include_spend=False), "anthropic")
+def test_vendor_billing_names_the_service_provider_as_invoice_issuer() -> None:
+    resolved = resolve_columns(BILLING, FocusDeploymentOverrides(billed_by="vendor"), "anthropic")
 
-    assert (resolved.include_spend, resolved.invoice_issuer_name) == (False, "Anthropic")
+    assert (resolved.billed_by, resolved.invoice_issuer_name) == ("vendor", "Anthropic")
 
 
 def test_unknown_override_keys_are_rejected() -> None:
@@ -106,7 +106,7 @@ def test_missing_router_deployment_or_focus_block_means_no_overrides(router: _Ro
 
 
 def test_invalid_focus_block_names_the_deployment() -> None:
-    router = _Router({"d1": _Deployment(_Info({"focus": {"include_spend": "sometimes"}}))})
+    router = _Router({"d1": _Deployment(_Info({"focus": {"billed_by": "sometimes"}}))})
 
     with pytest.raises(ValueError, match="deployment d1"):
         deployment_overrides(router, "d1")
@@ -142,9 +142,24 @@ def test_validation_names_the_first_invalid_deployment() -> None:
 
 @pytest.mark.parametrize(
     "router",
-    (None, _Router({}), _Router({"ok": _Deployment(_Info({"focus": {"include_spend": False}}))})),
+    (None, _Router({}), _Router({"ok": _Deployment(_Info({"focus": {"billed_by": "vendor"}}))})),
 )
 def test_validation_passes_without_a_router_or_with_valid_blocks(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
     router: _Router | None,
 ) -> None:
     validate_deployment_overrides(router)
+
+
+def test_configured_invoice_issuer_applies_unless_a_deployment_names_its_own() -> None:
+    billing = FocusBillingSettings(
+        billed_by="vendor",
+        billing_account_id="billing-1",
+        billing_account_name="Example AI Platform",
+        sub_account_id="billing-1",
+        sub_account_name="Example AI Platform",
+        invoice_issuer_name="Reseller Inc",
+    )
+    direct = FocusDeploymentOverrides(invoice_issuer_name="Direct Sales")
+
+    assert resolve_columns(billing, None, "openai").invoice_issuer_name == "Reseller Inc"
+    assert resolve_columns(billing, direct, "openai").invoice_issuer_name == "Direct Sales"
