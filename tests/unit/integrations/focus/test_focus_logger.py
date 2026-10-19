@@ -6,6 +6,7 @@ from decimal import Decimal
 import polars as pl
 import pytest
 
+import litellm
 from litellm import Router
 from litellm.integrations.focus.database import FocusLiteLLMDatabase
 from litellm.integrations.focus.destinations.base import FocusTimeWindow
@@ -17,6 +18,7 @@ from litellm.integrations.focus.v1_5.transformer import FOCUS_1_5_SCHEMA
 from litellm.proxy import proxy_server
 
 FOCUS_LOCK = "cronjob_lock:focus_export_usage_data"
+FOCUS_SETTINGS = {"billing_account_id": "billing-1", "billing_account_name": "Example AI Platform"}
 VANTAGE_LOCK = "cronjob_lock:vantage_export_usage_data"
 
 
@@ -142,17 +144,43 @@ def test_1_5_defaults_the_frequency_to_one_bucket_per_file(
 ) -> None:
     monkeypatch.delenv("FOCUS_FREQUENCY", raising=False)
 
-    assert FocusLogger(focus_version="1.5", data_granularity=granularity).frequency == frequency
+    logger = FocusLogger(focus_version="1.5", data_granularity=granularity, focus_settings=FOCUS_SETTINGS)
+
+    assert logger.frequency == frequency
 
 
-def test_1_5_still_rejects_an_explicit_frequency_that_splits_a_bucket() -> None:
-    with pytest.raises(ValueError, match="FOCUS_FREQUENCY=daily"):
-        FocusLogger(focus_version="1.5", frequency="hourly")
+def test_1_5_rejects_a_frequency_that_differs_from_the_granularity() -> None:
+    with pytest.raises(ValueError, match="FOCUS_FREQUENCY"):
+        FocusLogger(focus_version="1.5", frequency="hourly", focus_settings=FOCUS_SETTINGS)
+
+
+def test_1_5_needs_the_billing_account() -> None:
+    with pytest.raises(ValueError, match="billing_account_id and billing_account_name"):
+        FocusLogger(focus_version="1.5")
+
+
+def test_callback_settings_block_configures_the_generic_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FOCUS_VERSION", raising=False)
+    monkeypatch.setattr(
+        litellm, "callback_settings", {"focus": {**FOCUS_SETTINGS, "version": "1.5", "billed_by": "vendor"}}
+    )
+
+    logger = FocusLogger(destination_config={"bucket_name": "focus-test"})
+
+    assert logger.settings.version == "1.5"
+    assert logger.settings.billing is not None
+    assert logger.settings.billing.billed_by == "vendor"
+
+
+def test_a_pinned_version_ignores_the_callback_settings_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(litellm, "callback_settings", {"focus": {**FOCUS_SETTINGS, "version": "1.5"}})
+
+    assert FocusLogger(focus_version="1.2").settings == FocusExportSettings(version="1.2", data_granularity="daily")
 
 
 def test_1_5_engine_reads_spend_logs_and_emits_the_1_5_schema() -> None:
     engine = FocusLogger(
-        focus_version="1.5", frequency="daily", destination_config={"bucket_name": "focus-test"}
+        focus_version="1.5", focus_settings=FOCUS_SETTINGS, destination_config={"bucket_name": "focus-test"}
     )._ensure_engine()
 
     assert isinstance(engine._database, FocusSpendLogsDatabase)
@@ -168,7 +196,10 @@ def test_default_engine_keeps_the_1_2_pipeline() -> None:
 
 def test_1_5_csv_export_writes_tiny_costs_without_scientific_notation() -> None:
     engine = FocusLogger(
-        focus_version="1.5", frequency="daily", export_format="csv", destination_config={"bucket_name": "focus-test"}
+        focus_version="1.5",
+        focus_settings=FOCUS_SETTINGS,
+        export_format="csv",
+        destination_config={"bucket_name": "focus-test"},
     )._ensure_engine()
     frame = pl.DataFrame({"BilledCost": [Decimal("0.0000001234")]}, schema={"BilledCost": pl.Decimal(38, 10)})
 
@@ -179,13 +210,11 @@ def test_1_5_hourly_from_env_runs_on_the_default_hourly_frequency(monkeypatch: p
     monkeypatch.setenv("FOCUS_VERSION", "1.5")
     monkeypatch.setenv("FOCUS_DATA_GRANULARITY", "hourly")
     monkeypatch.delenv("FOCUS_FREQUENCY", raising=False)
+    monkeypatch.setattr(litellm, "callback_settings", {"focus": FOCUS_SETTINGS})
 
     logger = FocusLogger()
 
-    assert (logger.settings, logger.frequency) == (
-        FocusExportSettings(version="1.5", data_granularity="hourly"),
-        "hourly",
-    )
+    assert (logger.settings.version, logger.settings.data_granularity, logger.frequency) == ("1.5", "hourly", "hourly")
 
 
 def _at(day: int, hour: int = 0, minute: int = 0) -> datetime:
@@ -266,7 +295,9 @@ def test_aligned_windows_allow_a_full_31_day_span() -> None:
 
 class _RecordingFocusLogger(FocusLogger):
     def __init__(self) -> None:
-        super().__init__(focus_version="1.5", frequency="daily", destination_config={"bucket_name": "focus-test"})
+        super().__init__(
+            focus_version="1.5", focus_settings=FOCUS_SETTINGS, destination_config={"bucket_name": "focus-test"}
+        )
         self.exported: list[tuple[FocusTimeWindow, int | None]] = []  # mutable-ok: records exports for assertions
 
     async def _export_window(self, *, window: FocusTimeWindow, limit: int | None) -> None:
@@ -299,7 +330,7 @@ def test_1_5_logger_rejects_a_broken_focus_block_when_the_job_is_registered(monk
     monkeypatch.setattr(proxy_server, "llm_router", _router_with_a_broken_focus_block())
 
     with pytest.raises(ValueError, match="deployment spark-1"):
-        FocusLogger(focus_version="1.5", frequency="daily").validate_deployment_overrides()
+        FocusLogger(focus_version="1.5", focus_settings=FOCUS_SETTINGS).validate_deployment_overrides()
 
 
 def test_1_2_logger_ignores_focus_blocks(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
@@ -308,3 +339,15 @@ def test_1_2_logger_ignores_focus_blocks(  # test-quality-ok: passes only if val
     monkeypatch.setattr(proxy_server, "llm_router", _router_with_a_broken_focus_block())
 
     FocusLogger().validate_deployment_overrides()
+
+
+@pytest.mark.parametrize(
+    ("frequency", "start", "end"),
+    (("hourly", _at(10, 9), _at(10, 10)), ("daily", _at(9), _at(10))),
+)
+def test_last_closed_window_is_the_bucket_before_now(frequency: str, start: datetime, end: datetime) -> None:
+    from litellm.integrations.focus.focus_logger import last_closed_window
+
+    window = last_closed_window(frequency=frequency, now=_at(10, 10, 20))
+
+    assert (window.start_time, window.end_time, window.frequency) == (start, end, frequency)

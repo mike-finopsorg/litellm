@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, ClassVar, Final, cast
 
@@ -11,7 +12,7 @@ from litellm._logging import verbose_logger
 from litellm.integrations.custom_logger import CustomLogger
 
 from .destinations import FocusTimeWindow
-from .settings import default_export_frequency, parse_focus_export_settings, validate_export_frequency
+from .settings import parse_focus_export_settings, resolve_export_frequency
 
 if TYPE_CHECKING:
     import polars as pl
@@ -26,6 +27,18 @@ else:
 FOCUS_USAGE_DATA_JOB_NAME: Final = "focus_export_usage_data"
 DEFAULT_DRY_RUN_LIMIT: Final = 500
 MAX_EXPORT_SPAN: Final = timedelta(days=31)
+
+
+def _focus_config(
+    focus_version: str | None, focus_settings: Mapping[str, object] | None
+) -> Mapping[str, object] | None:
+    """Explicit settings win; a logger a subclass pins to a version ignores the config block."""
+    if focus_settings is not None:
+        return focus_settings
+    if focus_version is not None:
+        return None
+    block: Final = litellm.callback_settings.get("focus")
+    return block if isinstance(block, Mapping) else None
 
 
 def _bucket_step(frequency: str) -> timedelta:
@@ -45,6 +58,13 @@ def _to_utc(moment: datetime) -> datetime:
 def _floor(moment: datetime, step: timedelta) -> datetime:
     hour_start: Final = _to_utc(moment).replace(minute=0, second=0, microsecond=0)
     return hour_start if step == timedelta(hours=1) else hour_start.replace(hour=0)
+
+
+def last_closed_window(*, frequency: str, now: datetime) -> FocusTimeWindow:
+    """The most recent whole bucket before ``now``, which is the window the scheduler exports."""
+    step: Final = _bucket_step(frequency)
+    end: Final = _floor(now, step)
+    return FocusTimeWindow(start_time=end - step, end_time=end, frequency=frequency)
 
 
 def aligned_windows(
@@ -85,18 +105,18 @@ class FocusLogger(CustomLogger):
         destination_config: dict[str, Any] | None = None,
         focus_version: str | None = None,
         data_granularity: str | None = None,
+        focus_settings: Mapping[str, object] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.settings: Final = parse_focus_export_settings(
             version=focus_version or os.getenv("FOCUS_VERSION"),
             data_granularity=data_granularity or os.getenv("FOCUS_DATA_GRANULARITY"),
-            env=os.environ,
+            config=_focus_config(focus_version, focus_settings),
         )
         self.provider = (provider or os.getenv("FOCUS_PROVIDER") or "s3").lower()
         self.export_format = (export_format or os.getenv("FOCUS_FORMAT") or "parquet").lower()
-        self.frequency = (frequency or os.getenv("FOCUS_FREQUENCY") or default_export_frequency(self.settings)).lower()
-        validate_export_frequency(self.settings, self.frequency)
+        self.frequency = resolve_export_frequency(self.settings, frequency or os.getenv("FOCUS_FREQUENCY"))
         self.cron_offset_minute = (
             cron_offset_minute if cron_offset_minute is not None else int(os.getenv("FOCUS_CRON_OFFSET", "5"))
         )
@@ -313,4 +333,4 @@ class FocusLogger(CustomLogger):
         )
 
 
-__all__ = ("FocusLogger", "aligned_windows")
+__all__ = ("FocusLogger", "aligned_windows", "last_closed_window")
