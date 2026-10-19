@@ -13725,10 +13725,17 @@
           "additionalProperties": false,
           "properties": {
             "end_time_utc": {
-              "description": "Exclusive end of the range in UTC; a value without an offset is read as UTC",
-              "format": "date-time",
-              "title": "End Time Utc",
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive end of the preview window in UTC; a value without an offset is read as UTC",
+              "title": "End Time Utc"
             },
             "limit": {
               "default": 500,
@@ -13739,16 +13746,19 @@
               "type": "integer"
             },
             "start_time_utc": {
-              "description": "Inclusive start of the range in UTC; a value without an offset is read as UTC",
-              "format": "date-time",
-              "title": "Start Time Utc",
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Inclusive start of the preview window in UTC; a value without an offset is read as UTC. Leave both bounds out to preview the last closed scheduler window",
+              "title": "Start Time Utc"
             }
           },
-          "required": [
-            "start_time_utc",
-            "end_time_utc"
-          ],
           "title": "FocusDryRunRequest",
           "type": "object"
         },
@@ -13837,13 +13847,13 @@
           "additionalProperties": false,
           "properties": {
             "end_time_utc": {
-              "description": "Exclusive end of the range in UTC; a value without an offset is read as UTC",
+              "description": "Exclusive end of the export range in UTC; a value without an offset is read as UTC",
               "format": "date-time",
               "title": "End Time Utc",
               "type": "string"
             },
             "start_time_utc": {
-              "description": "Inclusive start of the range in UTC; a value without an offset is read as UTC",
+              "description": "Inclusive start of the export range in UTC; a value without an offset is read as UTC",
               "format": "date-time",
               "title": "Start Time Utc",
               "type": "string"
@@ -13960,7 +13970,7 @@
     "paths": {
       "/focus/dry-run": {
         "post": {
-          "description": "Return the FOCUS rows an export of [start_time_utc, end_time_utc) would upload, without uploading them. Totals\ncover every row in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the\nsame way /focus/export widens it. Only proxy admins can call it.",
+          "description": "Return the FOCUS rows an export of [start_time_utc, end_time_utc) would upload, without uploading them. Totals\ncover every row in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the\nsame way /focus/export widens it, and defaults to the last closed scheduler window. Only proxy admins can call\nit.",
           "operationId": "focus_dry_run_focus_dry_run_post",
           "requestBody": {
             "content": {

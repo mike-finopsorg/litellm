@@ -5676,7 +5676,8 @@ export interface paths {
          * Focus Dry Run
          * @description Return the FOCUS rows an export of [start_time_utc, end_time_utc) would upload, without uploading them. Totals
          *     cover every row in the window and ``limit`` caps the rows returned. The window is widened to whole buckets the
-         *     same way /focus/export widens it. Only proxy admins can call it.
+         *     same way /focus/export widens it, and defaults to the last closed scheduler window. Only proxy admins can call
+         *     it.
          */
         post: operations["focus_dry_run_focus_dry_run_post"];
         delete?: never;
@@ -32385,10 +32386,9 @@ export interface components {
         FocusDryRunRequest: {
             /**
              * End Time Utc
-             * Format: date-time
-             * @description Exclusive end of the range in UTC; a value without an offset is read as UTC
+             * @description Exclusive end of the preview window in UTC; a value without an offset is read as UTC
              */
-            end_time_utc: string;
+            end_time_utc?: string | null;
             /**
              * Limit
              * @description Maximum number of FOCUS rows to return; totals cover all rows
@@ -32397,10 +32397,9 @@ export interface components {
             limit: number;
             /**
              * Start Time Utc
-             * Format: date-time
-             * @description Inclusive start of the range in UTC; a value without an offset is read as UTC
+             * @description Inclusive start of the preview window in UTC; a value without an offset is read as UTC. Leave both bounds out to preview the last closed scheduler window
              */
-            start_time_utc: string;
+            start_time_utc?: string | null;
         };
         /** FocusDryRunResponse */
         FocusDryRunResponse: {
@@ -32429,13 +32428,13 @@ export interface components {
             /**
              * End Time Utc
              * Format: date-time
-             * @description Exclusive end of the range in UTC; a value without an offset is read as UTC
+             * @description Exclusive end of the export range in UTC; a value without an offset is read as UTC
              */
             end_time_utc: string;
             /**
              * Start Time Utc
              * Format: date-time
-             * @description Inclusive start of the range in UTC; a value without an offset is read as UTC
+             * @description Inclusive start of the export range in UTC; a value without an offset is read as UTC
              */
             start_time_utc: string;
         };
