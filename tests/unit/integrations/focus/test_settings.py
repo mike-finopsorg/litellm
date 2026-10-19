@@ -1,25 +1,24 @@
 from __future__ import annotations
 
+import pydantic
 import pytest
 
 from litellm.integrations.focus.settings import (
     FocusBillingSettings,
+    FocusDataGranularity,
     FocusExportSettings,
-    default_export_frequency,
-    parse_focus_billing_settings,
     parse_focus_export_settings,
-    validate_export_frequency,
+    resolve_export_frequency,
 )
 
+ACCOUNT = {"billing_account_id": "billing-1", "billing_account_name": "Example AI Platform"}
 
-@pytest.mark.parametrize(
-    ("version", "data_granularity"),
-    ((None, None), ("", ""), ("  ", "  ")),
-)
+
+@pytest.mark.parametrize(("version", "data_granularity"), ((None, None), ("", ""), ("  ", "  ")))
 def test_unset_values_fall_back_to_defaults(version: str | None, data_granularity: str | None) -> None:
     settings = parse_focus_export_settings(version=version, data_granularity=data_granularity)
 
-    assert settings == FocusExportSettings(version="1.2", data_granularity="daily")
+    assert settings == FocusExportSettings(version="1.2", data_granularity="daily", billing=None)
 
 
 def test_values_are_normalized_before_validation() -> None:
@@ -40,149 +39,114 @@ def test_unsupported_data_granularity_is_rejected(data_granularity: str) -> None
         parse_focus_export_settings(version=None, data_granularity=data_granularity)
 
 
-def test_version_1_5_is_accepted() -> None:
-    assert parse_focus_export_settings(version="1.5", data_granularity=None).version == "1.5"
-
-
-@pytest.mark.parametrize("frequency", ("hourly", "interval"))
-def test_1_5_daily_rejects_frequencies_that_split_a_day(frequency: str) -> None:
-    settings = FocusExportSettings(version="1.5", data_granularity="daily")
-
-    with pytest.raises(ValueError, match="FOCUS_FREQUENCY=daily"):
-        validate_export_frequency(settings, frequency)
-
-
-def test_1_5_daily_accepts_daily_frequency(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
-) -> None:
-    validate_export_frequency(FocusExportSettings(version="1.5", data_granularity="daily"), "daily")
-
-
-@pytest.mark.parametrize("frequency", ("hourly", "daily", "interval"))
-def test_1_2_keeps_accepting_every_frequency(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
-    frequency: str,
-) -> None:
-    validate_export_frequency(FocusExportSettings(version="1.2", data_granularity="daily"), frequency)
-
-
-def test_billing_defaults_to_spend_and_a_hostname_label() -> None:
-    assert parse_focus_billing_settings({}, hostname="spark") == FocusBillingSettings(
-        include_spend=True,
-        billing_account_id="spark-litellm",
-        billing_account_name="spark-litellm",
-        sub_account_id="spark-litellm",
-        sub_account_name="spark-litellm",
-    )
-
-
-def test_billing_values_come_from_focus_env() -> None:
-    env = {
-        "FOCUS_INCLUDE_SPEND": " False ",
-        "FOCUS_BILLING_ID": "billing-1",
-        "FOCUS_BILLING_NAME": "Example AI Platform",
-        "FOCUS_ACCOUNT_ID": "account-1",
-        "FOCUS_ACCOUNT_NAME": "Example Account",
-    }
-
-    assert parse_focus_billing_settings(env, hostname="spark") == FocusBillingSettings(
-        include_spend=False,
-        billing_account_id="billing-1",
-        billing_account_name="Example AI Platform",
-        sub_account_id="account-1",
-        sub_account_name="Example Account",
-    )
-
-
-def test_blank_billing_values_fall_back_to_the_hostname_label() -> None:
-    settings = parse_focus_billing_settings({"FOCUS_BILLING_NAME": "  ", "FOCUS_INCLUDE_SPEND": ""}, hostname="spark")
-
-    assert (settings.billing_account_name, settings.include_spend) == ("spark-litellm", True)
-
-
-@pytest.mark.parametrize("raw", ("maybe", "2", "enabled"))
-def test_unsupported_include_spend_is_rejected(raw: str) -> None:
-    with pytest.raises(ValueError, match="FOCUS_INCLUDE_SPEND"):
-        parse_focus_billing_settings({"FOCUS_INCLUDE_SPEND": raw}, hostname="spark")
-
-
-def test_region_defaults_to_null() -> None:
-    settings = parse_focus_billing_settings({}, hostname="spark")
-
-    assert (settings.region_id, settings.region_name) == (None, None)
-
-
-def test_region_comes_from_focus_env() -> None:
-    settings = parse_focus_billing_settings(
-        {"FOCUS_REGION_ID": " us-east ", "FOCUS_REGION_NAME": "US East"}, hostname="spark"
-    )
-
-    assert (settings.region_id, settings.region_name) == ("us-east", "US East")
-
-
-@pytest.mark.parametrize("env", ({"FOCUS_REGION_ID": "us-east"}, {"FOCUS_REGION_NAME": "US East"}))
-def test_region_id_and_name_must_be_set_together(env: dict[str, str]) -> None:
-    with pytest.raises(ValueError, match="FOCUS_REGION_ID and FOCUS_REGION_NAME must be set together"):
-        parse_focus_billing_settings(env, hostname="spark")
-
-
-def test_1_2_ignores_1_5_billing_env() -> None:
-    settings = parse_focus_export_settings(
-        version="1.2",
-        data_granularity=None,
-        env={"FOCUS_REGION_ID": "us-east", "FOCUS_INCLUDE_SPEND": "bogus", "FOCUS_BILLING_ID": "acct"},
-        hostname="spark",
-    )
-
-    assert settings.version == "1.2"
-    assert settings.billing.billing_account_id != "acct"
-
-
-def test_1_5_reads_billing_env() -> None:
-    settings = parse_focus_export_settings(
-        version="1.5", data_granularity=None, env={"FOCUS_BILLING_ID": "acct"}, hostname="spark"
-    )
-
-    assert settings.billing.billing_account_id == "acct"
-
-
-def test_1_5_rejects_invalid_billing_env() -> None:
-    with pytest.raises(ValueError, match="FOCUS_REGION_ID and FOCUS_REGION_NAME must be set together"):
-        parse_focus_export_settings(version="1.5", data_granularity=None, env={"FOCUS_REGION_ID": "us-east"})
-
-
-def test_1_5_accepts_hourly_granularity() -> None:
-    settings = parse_focus_export_settings(version="1.5", data_granularity="hourly")
-
-    assert settings == FocusExportSettings(version="1.5", data_granularity="hourly")
-
-
 def test_1_2_rejects_hourly_granularity() -> None:
     with pytest.raises(ValueError, match=r"FOCUS_VERSION=1\.2 only supports FOCUS_DATA_GRANULARITY=daily"):
         parse_focus_export_settings(version="1.2", data_granularity="hourly")
 
 
-@pytest.mark.parametrize("frequency", ("hourly", "daily"))
-def test_1_5_hourly_accepts_frequencies_made_of_whole_hours(  # test-quality-ok: passes only if validation does not raise, which is the behavior under test
-    frequency: str,
-) -> None:
-    validate_export_frequency(FocusExportSettings(version="1.5", data_granularity="hourly"), frequency)
+def test_1_5_needs_the_billing_account() -> None:
+    with pytest.raises(ValueError, match="billing_account_id and billing_account_name"):
+        parse_focus_export_settings(version="1.5", data_granularity=None)
 
 
-def test_1_5_hourly_rejects_interval_frequency() -> None:
-    settings = FocusExportSettings(version="1.5", data_granularity="hourly")
+def test_1_5_billing_defaults_to_the_operator_and_one_account() -> None:
+    settings = parse_focus_export_settings(version="1.5", data_granularity=None, config=ACCOUNT)
 
-    with pytest.raises(ValueError, match="FOCUS_FREQUENCY=hourly or daily"):
-        validate_export_frequency(settings, "interval")
+    assert settings == FocusExportSettings(
+        version="1.5",
+        data_granularity="daily",
+        billing=FocusBillingSettings(
+            billed_by="operator",
+            billing_account_id="billing-1",
+            billing_account_name="Example AI Platform",
+            sub_account_id="billing-1",
+            sub_account_name="Example AI Platform",
+        ),
+    )
+
+
+def test_config_block_sets_every_billing_column() -> None:
+    config = {
+        **ACCOUNT,
+        "billed_by": "vendor",
+        "sub_account_id": "account-1",
+        "sub_account_name": "Example Account",
+        "region_id": "us-east",
+        "region_name": "US East",
+        "invoice_issuer_name": "Reseller Inc",
+    }
+
+    assert parse_focus_export_settings(version="1.5", data_granularity=None, config=config).billing == (
+        FocusBillingSettings(
+            billed_by="vendor",
+            billing_account_id="billing-1",
+            billing_account_name="Example AI Platform",
+            sub_account_id="account-1",
+            sub_account_name="Example Account",
+            region_id="us-east",
+            region_name="US East",
+            invoice_issuer_name="Reseller Inc",
+        )
+    )
+
+
+def test_config_block_wins_over_the_environment() -> None:
+    settings = parse_focus_export_settings(
+        version="1.2", data_granularity="daily", config={**ACCOUNT, "version": "1.5", "data_granularity": "hourly"}
+    )
+
+    assert (settings.version, settings.data_granularity) == ("1.5", "hourly")
+
+
+def test_config_block_accepts_a_yaml_number_as_the_version() -> None:
+    settings = parse_focus_export_settings(version=None, data_granularity=None, config={**ACCOUNT, "version": 1.5})
+
+    assert settings.version == "1.5"
+
+
+@pytest.mark.parametrize("config", ({"region_id": "us-east"}, {"region_name": "US East"}))
+def test_region_id_and_name_must_be_set_together(config: dict[str, str]) -> None:
+    with pytest.raises(ValueError, match="region_id and region_name must be set together"):
+        parse_focus_export_settings(version="1.5", data_granularity=None, config={**ACCOUNT, **config})
+
+
+@pytest.mark.parametrize("config", ({"billed_by": "sometimes"}, {"include_spend": True}, {"billing_id": "x"}))
+def test_unknown_or_invalid_config_keys_are_rejected(config: dict[str, object]) -> None:
+    with pytest.raises(pydantic.ValidationError):
+        parse_focus_export_settings(version="1.5", data_granularity=None, config={**ACCOUNT, **config})
+
+
+def test_1_2_ignores_the_billing_block() -> None:
+    settings = parse_focus_export_settings(version="1.2", data_granularity=None, config={"billed_by": "vendor"})
+
+    assert settings == FocusExportSettings(version="1.2", data_granularity="daily", billing=None)
 
 
 @pytest.mark.parametrize(
-    ("settings", "frequency"),
-    (
-        (FocusExportSettings(version="1.2", data_granularity="daily"), "hourly"),
-        (FocusExportSettings(version="1.5", data_granularity="daily"), "daily"),
-        (FocusExportSettings(version="1.5", data_granularity="hourly"), "hourly"),
-    ),
+    ("configured", "frequency"), ((None, "hourly"), ("", "hourly"), ("daily", "daily"), ("interval", "interval"))
 )
-def test_default_frequency_keeps_1_2_hourly_and_gives_1_5_one_bucket_per_file(
-    settings: FocusExportSettings, frequency: str
+def test_1_2_frequency_comes_from_the_environment_and_defaults_to_hourly(
+    configured: str | None, frequency: str
 ) -> None:
-    assert default_export_frequency(settings) == frequency
+    assert resolve_export_frequency(FocusExportSettings(version="1.2"), configured) == frequency
+
+
+@pytest.mark.parametrize(
+    ("granularity", "configured"), (("daily", None), ("daily", "daily"), ("hourly", None), ("hourly", "hourly"))
+)
+def test_1_5_writes_one_file_per_bucket(granularity: FocusDataGranularity, configured: str | None) -> None:
+    settings = FocusExportSettings(version="1.5", data_granularity=granularity)
+
+    assert resolve_export_frequency(settings, configured) == granularity
+
+
+@pytest.mark.parametrize(
+    ("granularity", "configured"), (("daily", "hourly"), ("hourly", "daily"), ("daily", "interval"))
+)
+def test_1_5_rejects_a_frequency_that_differs_from_the_granularity(
+    granularity: FocusDataGranularity, configured: str
+) -> None:
+    settings = FocusExportSettings(version="1.5", data_granularity=granularity)
+
+    with pytest.raises(ValueError, match="FOCUS_FREQUENCY"):
+        resolve_export_frequency(settings, configured)
