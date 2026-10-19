@@ -38,9 +38,12 @@ class FocusDryRunRequest(BaseModel):
     def _both_bounds_in_order(self) -> Self:
         if (self.start_time_utc is None) != (self.end_time_utc is None):
             raise ValueError("start_time_utc and end_time_utc must be given together")
-        if self.start_time_utc is not None and self.end_time_utc is not None:
-            if self.end_time_utc <= self.start_time_utc:
-                raise ValueError("end_time_utc must be after start_time_utc")
+        if (
+            self.start_time_utc is not None
+            and self.end_time_utc is not None
+            and self.end_time_utc <= self.start_time_utc
+        ):
+            raise ValueError("end_time_utc must be after start_time_utc")
         return self
 
 
