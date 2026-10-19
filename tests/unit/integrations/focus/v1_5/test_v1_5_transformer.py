@@ -17,7 +17,7 @@ from litellm.integrations.focus.v1_5.overrides import FocusDeploymentOverrides
 from litellm.integrations.focus.v1_5.transformer import FOCUS_1_5_SCHEMA, Focus15Transformer
 
 BILLING = FocusBillingSettings(
-    include_spend=True,
+    billed_by="operator",
     billing_account_id="billing-1",
     billing_account_name="Example AI Platform",
     sub_account_id="account-1",
@@ -114,7 +114,7 @@ def test_token_bucket_maps_onto_every_focus_column() -> None:
         "ServiceSubcategory": "Generative AI",
         "SkuId": "openai/gpt-5.4-mini/input-tokens",
         "SkuMeter": "Input Tokens",
-        "SkuPriceDetails": None,
+        "SkuPriceDetails": '{"x_ServiceTier": "default"}',
         "SkuPriceId": "openai/gpt-5.4-mini/input-tokens/default",
         "SubAccountId": "account-1",
         "SubAccountName": "Example Account",
@@ -123,9 +123,9 @@ def test_token_bucket_maps_onto_every_focus_column() -> None:
     }
 
 
-def test_without_spend_the_gateway_bills_nothing_and_the_vendor_issues_the_invoice() -> None:
+def test_vendor_billing_reports_no_billed_cost_and_names_the_vendor_as_invoice_issuer() -> None:
     billing = FocusBillingSettings(
-        include_spend=False,
+        billed_by="vendor",
         billing_account_id="billing-1",
         billing_account_name="Example AI Platform",
         sub_account_id="account-1",
@@ -179,7 +179,7 @@ def test_tags_are_null_without_request_tags_or_team() -> None:
 
 def test_configured_region_is_stamped_on_every_row() -> None:
     billing = FocusBillingSettings(
-        include_spend=True,
+        billed_by="operator",
         billing_account_id="billing-1",
         billing_account_name="Example AI Platform",
         sub_account_id="account-1",
@@ -294,8 +294,8 @@ def test_deployment_overrides_win_over_env_settings() -> None:
     ) == ("us", "United States", "org-123", "Example AI Platform", "account-1", "Paid Inference", "OpenAI Platform")
 
 
-def test_include_spend_can_differ_per_deployment() -> None:
-    overrides = {"vendor-billed": FocusDeploymentOverrides(include_spend=False)}
+def test_billed_by_can_differ_per_deployment() -> None:
+    overrides = {"vendor-billed": FocusDeploymentOverrides(billed_by="vendor")}
     frame = _transform(_bucket(model_id="gateway-billed"), _bucket(model_id="vendor-billed"), overrides=overrides)
 
     assert frame.select("ResourceId", "BilledCost", "EffectiveCost", "InvoiceIssuerName").rows() == [
@@ -307,7 +307,7 @@ def test_include_spend_can_differ_per_deployment() -> None:
 def test_explicit_invoice_issuer_and_provider_names_are_kept() -> None:
     overrides = {
         "deployment-1": FocusDeploymentOverrides(
-            include_spend=False, invoice_issuer_name="Reseller Inc", service_provider_name="OpenAI LLC"
+            billed_by="vendor", invoice_issuer_name="Reseller Inc", service_provider_name="OpenAI LLC"
         )
     }
     row = _transform(_bucket(), overrides=overrides).row(0, named=True)
@@ -368,3 +368,19 @@ def test_user_tags_with_the_reserved_litellm_prefix_are_dropped() -> None:
     row = _row(request_tags='["litellm/team_id", "litellm/env", "prod"]')
 
     assert json.loads(row["Tags"]) == {"litellm/team_alias": "Agents", "litellm/team_id": "team-1", "prod": True}
+
+
+def test_requests_meter_counts_requests_at_no_cost() -> None:
+    row = _row(meter="Requests", quantity=3, list_cost=0.0, contracted_cost=0.0, billed_cost=0.0)
+
+    assert (row["PricingUnit"], row["ConsumedQuantity"], row["ListCost"], row["ListUnitPrice"], row["SkuId"]) == (
+        "Requests",
+        Decimal(3),
+        Decimal(0),
+        Decimal(0),
+        "openai/gpt-5.4-mini/requests",
+    )
+
+
+def test_sku_price_details_carry_the_service_tier() -> None:
+    assert _row(service_tier="flex")["SkuPriceDetails"] == '{"x_ServiceTier": "flex"}'

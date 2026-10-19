@@ -14,7 +14,7 @@ from ..settings import FocusDataGranularity
 
 BucketUnit: TypeAlias = Literal["day", "hour"]
 SkuMeter: TypeAlias = Literal[
-    "Input Tokens", "Cached Input Tokens", "Cache Write Tokens", "Output Tokens", "Other Usage"
+    "Input Tokens", "Cached Input Tokens", "Cache Write Tokens", "Output Tokens", "Other Usage", "Requests"
 ]
 
 SPEND_LOG_BUCKETS_SQL: Final = """
@@ -94,6 +94,7 @@ skus AS (
             ('Cached Input Tokens', totals.cached_tokens, totals.cached_list),
             ('Cache Write Tokens', totals.cache_write_tokens, totals.cache_write_list),
             ('Output Tokens', totals.completion_tokens, totals.output_list),
+            ('Requests', 1::bigint, 0::float8),
             (
                 'Other Usage',
                 1::bigint,

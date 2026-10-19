@@ -85,6 +85,7 @@ _METER_SLUGS: Final = MappingProxyType(
         "Cache Write Tokens": "cache-write-tokens",
         "Output Tokens": "output-tokens",
         "Other Usage": "other-usage",
+        "Requests": "requests",
     }
 )
 
@@ -199,7 +200,7 @@ _LOOKUP_SCHEMA: Final = pl.Schema(
     (
         ("model_id", pl.String),
         ("custom_llm_provider", pl.String),
-        *((name, pl.Boolean if name == "include_spend" else pl.String) for name in _RESOLVED_FIELDS),
+        *((name, pl.String) for name in _RESOLVED_FIELDS),
     )
 )
 
@@ -211,10 +212,12 @@ class Focus15Transformer:
 
     def __init__(
         self,
-        settings: FocusExportSettings | None = None,
+        settings: FocusExportSettings,
         resolve_overrides: ResolveDeploymentOverrides = proxy_deployment_overrides,
     ) -> None:
-        self._billing: Final = (settings or FocusExportSettings()).billing
+        if settings.billing is None:
+            raise ValueError("FOCUS 1.5 export needs billing settings; set callback_settings.focus")
+        self._billing: Final = settings.billing
         self._resolve_overrides: Final = resolve_overrides
 
     def _lookup(self, frame: pl.DataFrame) -> pl.DataFrame:
@@ -243,9 +246,9 @@ class Focus15Transformer:
             nulls_equal=True,
             maintain_order="left",
         )
-        is_token_meter: Final = pl.col("meter") != "Other Usage"
+        is_token_meter: Final = (pl.col("meter") != "Other Usage") & (pl.col("meter") != "Requests")
         unit: Final = pl.when(is_token_meter).then(pl.lit("Tokens")).otherwise(pl.lit("Requests"))
-        billed: Final = _cost(pl.when(pl.col("include_spend")).then(pl.col("billed_cost")).otherwise(0))
+        billed: Final = _cost(pl.when(pl.col("billed_by") == "operator").then(pl.col("billed_cost")).otherwise(0))
         has_deployment: Final = pl.col("model_id").is_not_null()
         sku_id: Final = pl.concat_str(
             pl.col("model").fill_null("unknown-model"),
@@ -303,7 +306,9 @@ class Focus15Transformer:
             pl.lit("Generative AI").alias("ServiceSubcategory"),
             sku_id.alias("SkuId"),
             pl.col("meter").alias("SkuMeter"),
-            pl.lit(None, dtype=pl.String).alias("SkuPriceDetails"),
+            pl.concat_str(
+                pl.lit('{"x_ServiceTier": "'), pl.col("service_tier").fill_null("default"), pl.lit('"}')
+            ).alias("SkuPriceDetails"),
             pl.concat_str(sku_id, pl.col("service_tier").fill_null("default"), separator="/").alias("SkuPriceId"),
             pl.col("sub_account_id").alias("SubAccountId"),
             pl.col("sub_account_name").alias("SubAccountName"),
